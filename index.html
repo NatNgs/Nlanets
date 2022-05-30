@@ -8,9 +8,6 @@
 	<script src="https://pixijs.download/v6.2.1/pixi.js"></script> <!-- use .min.js for prod -->
 	<script src="https://natngs.github.io/lib/rnd.js"></script>
 
-	<!-- Dependencies Internalized -->
-	<script src="dependencies/rhill-voronoi-core.js"></script>
-
 	<!-- Internal -->
 	<script src="scripts/polyfill.js"></script>
 	<script src="scripts/Viewport.js"></script>
@@ -24,6 +21,7 @@
 		// On body load
 		$(document).ready(function() {
 			const E = new Engine()
+			E.set(25, 25, 25, 42)
 
 			const elementsList = [
 				'viewport', 'btn-nextTurn', 'label-turn'

@@ -1,13 +1,11 @@
 var Viewport = (function() {
 	const ZOOM_SPEED = 16
-	const ZOOM_MIN = -2
-	const ZOOM_MAX = 2
-	const DEFAULT_ZOOM_CELL_SIZE = 64
+	const MAP_MOVE_SENSITIVITY = 1
 
-	return function(divs, engine) {
+	const Viewport = function(divs, engine) {
 		const THIS_VIEWPORT = this
 		const ENGINE = engine
-		this.viewLocation = {x:.5, y:.5, zoom: 1}
+		this.viewLocation = {x:0, y:0, zoom: 0}
 
 		let turn = 0 // int, +1 per turn
 		let ingameTime = 0 // +1 per turn; can use decimal for computing frames
@@ -16,44 +14,24 @@ var Viewport = (function() {
 		const HTML = divs.viewport
 		const pixi = new PIXI.Application({ resizeTo: window, clearBeforeRender: true, antialias: true })
 		HTML.append(pixi.view)
-		const graphics = new PIXI.Graphics();
-		pixi.stage.addChild(graphics)
+		this._div = HTML
 
-		let dragnDrop = false
+		const graphics = new PIXI.Graphics()
+		pixi.stage.addChild(graphics)
+		this.gameToViewportMatrix = new PIXI.Matrix()
+
 		let mouseLocation = {x:0, y:0}
-		let dragnDropLocation = null
+		let dragnDrop = false
 
 		// Zoom on mouse wheel scroll
 		HTML.bind('mousewheel DOMMouseScroll', (e)=>{
-			let relX = e.pageX - HTML.offset().left;
-			let relY = e.pageY - HTML.offset().top;
-			const relZ = (e.originalEvent.wheelDelta || -e.originalEvent.detail) / ZOOM_SPEED
-
-			let graphContext = getGraphContext()
-
-			// Virtualy move the viewport from the mouse position to the center of the viewport
-			THIS_VIEWPORT.viewLocation.x += (relX - (graphContext.vW / 2)) / graphContext.cS
-			THIS_VIEWPORT.viewLocation.y += (relY - (graphContext.vH / 2)) / graphContext.cS
-
-			// Apply zoom (before checks)
-			THIS_VIEWPORT.viewLocation.zoom += relZ
-
-			// Limit Zoom (min zoom = 0, max zoom = 5x5 cells to fit in screen)
-			if(THIS_VIEWPORT.viewLocation.zoom < ZOOM_MIN) THIS_VIEWPORT.viewLocation.zoom = ZOOM_MIN
-			else if(THIS_VIEWPORT.viewLocation.zoom > ZOOM_MAX) THIS_VIEWPORT.viewLocation.zoom = ZOOM_MAX
-
-			// Apply zoom
-			graphContext.cS = getCellSize()
-
-			// Move back the viewport to the mouse position
-			THIS_VIEWPORT.viewLocation.x -= (relX - (graphContext.vW / 2)) / graphContext.cS
-			THIS_VIEWPORT.viewLocation.y -= (relY - (graphContext.vH / 2)) / graphContext.cS
+			const mouseLocationViewport = THIS_VIEWPORT.getViewportMouseLocation(e)
+			THIS_VIEWPORT.updateZoom(mouseLocationViewport, THIS_VIEWPORT.viewLocation.zoom + (e.originalEvent.wheelDelta || -e.originalEvent.detail) / ZOOM_SPEED)
 		}).bind('mousedown', (e)=>{
-			if(e.button === 2) {
+			if(e.button === 2 && !dragnDrop) {
 				// Right click
-				dragnDropLocation = {x: e.pageX, y: e.pageY}
 				HTML.css('cursor', 'move')
-				dragnDrop = true
+				dragnDrop = mouseLocation
 			}
 		}).bind('mouseup', (e)=>{
 			if(e.button === 0) {
@@ -66,41 +44,25 @@ var Viewport = (function() {
 				e.preventDefault()
 			}
 		}).bind('mousemove', (e)=>{
-			const graphContext = getGraphContext()
-			mouseLocation = viewportToGameLocation({x: e.pageX - HTML.offset().left, y: e.pageY - HTML.offset().top}, graphContext)
-			if (dragnDrop) {
-				THIS_VIEWPORT.viewLocation.x -= (e.pageX - dragnDropLocation.x) / graphContext.cS
-				THIS_VIEWPORT.viewLocation.y -= (e.pageY - dragnDropLocation.y) / graphContext.cS
-				dragnDropLocation = {x: e.pageX, y: e.pageY}
+			const mouseLocationViewport = THIS_VIEWPORT.getViewportMouseLocation(e)
+			mouseLocation = this.gameToViewportMatrix.applyInverse(mouseLocationViewport)
+			if(dragnDrop) {
+				if((e.buttons & 2) === 0) {
+					// Not rightclicking anymore; can happen if user releases the mouse button outside the window
+					HTML.css('cursor', 'default')
+					dragnDrop = false
+				} else {
+					const dx = (mouseLocation.x - dragnDrop.x) * MAP_MOVE_SENSITIVITY
+					const dy = (mouseLocation.y - dragnDrop.y) * MAP_MOVE_SENSITIVITY
+					THIS_VIEWPORT.viewLocation.x -= dx
+					THIS_VIEWPORT.viewLocation.y -= dy
+					dragnDrop = {x: mouseLocation.x + dx, y: mouseLocation.y + dy}
+					THIS_VIEWPORT.updateView()
+				}
 			}
 		}).bind('contextmenu', (e)=>{
 			e.preventDefault()
 		})
-
-		const getCellSize = function() {
-			return DEFAULT_ZOOM_CELL_SIZE*(2**THIS_VIEWPORT.viewLocation.zoom)
-		}
-		const getGraphContext = function() {
-			return {
-				vW: HTML.width(),
-				vH: HTML.height(),
-				cS: getCellSize(),
-				mouseLocation: mouseLocation,
-			}
-		}
-
-		const gameToViewportLocation = function(gameXY, graphContext) {
-			return {
-				x: graphContext.vW/2 + (gameXY.x - THIS_VIEWPORT.viewLocation.x)*graphContext.cS,
-				y: graphContext.vH/2 + (gameXY.y - THIS_VIEWPORT.viewLocation.y)*graphContext.cS,
-			}
-		}
-		const viewportToGameLocation = function(viewportXY, graphContext) {
-			return {
-				x: (viewportXY.x - graphContext.vW/2)/graphContext.cS + THIS_VIEWPORT.viewLocation.x,
-				y: (viewportXY.y - graphContext.vH/2)/graphContext.cS + THIS_VIEWPORT.viewLocation.y,
-			}
-		}
 
 		const onIngameTimeStop = function() {
 			divs['btn-nextTurn'].prop('disabled', false)
@@ -120,30 +82,75 @@ var Viewport = (function() {
 			// Update game data
 			ENGINE.update(ingameTime)
 
-			// Update graphics
-			const graphContext = getGraphContext()
-			graphics.context = graphContext
-
-			const ingameRenderBounds = [ // [{x,y}, {x,y}] 2 coordinates defining the current bounding of the screen, in game coordinate format
-				viewportToGameLocation({x: 0, y: 0}, graphContext),
-				viewportToGameLocation({x: graphContext.vW, y: graphContext.vH}, graphContext),
-			]
-
+			// Redraw all (TODO later: instead of redrawing everything, add every sub elements as graphics.addChild(subElement), and let pixiJS to the job)
 			graphics.clear()
-			graphics.locX = (x)=>gameToViewportLocation({x:x,y:0}, graphContext).x
-			graphics.locY = (y)=>gameToViewportLocation({x:0,y:y}, graphContext).y
-			if(!ENGINE.render(graphics, animationTime, ingameRenderBounds)) {
+			graphics.onePixel = 1/graphics.scale.x // this.gameToViewportMatrix.applyInverse({x:1, y:1}).x
+			if(!ENGINE.render(graphics, animationTime)) {
 				console.error('Engine render failed: Ticker Stopped.')
 				pixi.ticker.stop()
 			}
 		})
 
-		this.getCellSize = getCellSize
-		this.getGraphContext = getGraphContext
-
 		divs['btn-nextTurn'].click(()=>{
 			turn += 1
 			divs['btn-nextTurn'].prop('disabled', true)
 		})
+
+
+		this.updateZoom = function(mouseLocationViewport, newZoom) {
+			// Where is the mouse in the game before zoom
+			const mouseLocationGameBefore = this.gameToViewportMatrix.applyInverse(mouseLocationViewport)
+
+			// Compute zoom value
+			THIS_VIEWPORT.viewLocation.zoom = newZoom
+
+			// Fix limits depending on engine bounds
+			const gameBounds = ENGINE.getBounds() // [{x,y}, {x,y}]
+			const viewportBounds = this.getViewportBoundsOnScreen() // [{x,y}, {x,y}]
+			const ratioX = (viewportBounds[1].x - viewportBounds[0].x) / (gameBounds[1].x - gameBounds[0].x)
+			const ratioY = (viewportBounds[1].y - viewportBounds[0].y) / (gameBounds[1].y - gameBounds[0].y)
+			const minZoom = Math.log2(Math.min(ratioX, ratioY) * .9) // Tolerate 5% margin on every side
+			if(this.viewLocation.zoom < minZoom) {
+				this.viewLocation.zoom = minZoom
+			}
+
+			// Apply zoom & viewport move, to the matrix only
+			THIS_VIEWPORT.updateView(false)
+
+			// Where is the mouse in the game after zoom
+			const mouseLocationGameAfter = this.gameToViewportMatrix.applyInverse(mouseLocationViewport)
+
+			// Move the viewport so the mouse stays in the same place
+			THIS_VIEWPORT.viewLocation.x += mouseLocationGameAfter.x - mouseLocationGameBefore.x
+			THIS_VIEWPORT.viewLocation.y += mouseLocationGameAfter.y - mouseLocationGameBefore.y
+
+			// Apply to the matrix
+			THIS_VIEWPORT.updateView(true)
+		}
+		this.updateView = function(doUpdate=true) {
+			// Initiate the matrix
+			this.gameToViewportMatrix.identity()
+
+			// Apply zoom
+			const zoomFactor = 2**this.viewLocation.zoom
+			this.gameToViewportMatrix.scale(zoomFactor, zoomFactor)
+			this.gameToViewportMatrix.translate(this.viewLocation.x * zoomFactor, this.viewLocation.y * zoomFactor)
+
+			if(doUpdate) {
+				graphics.transform.setFromMatrix(this.gameToViewportMatrix)
+				graphics.pixelSize
+			}
+		}
+
+		THIS_VIEWPORT.updateView(true)
 	}
+
+	Viewport.prototype.getViewportBoundsOnScreen = function() {
+		return [{x: this._div.offset().left, y: this._div.offset().top}, {x: this._div.offset().left + this._div.width(), y: this._div.offset().top + this._div.height()}]
+	}
+	Viewport.prototype.getViewportMouseLocation = function(event) {
+		return {x: event.pageX - this._div.offset().left, y: event.pageY - this._div.offset().top}
+	}
+
+	return Viewport
 })()

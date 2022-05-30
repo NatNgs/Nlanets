@@ -1,3 +1,5 @@
+const SCALING = 2**10
+
 var Engine = (function () {
 	const REPARTITION_REPEAT = 1
 
@@ -8,10 +10,10 @@ var Engine = (function () {
 		this.height = 0
 	}
 
-	const MIN_DISTANCE_BETWEEN_PLANETS = 1.5
+	const MIN_DISTANCE_BETWEEN_PLANETS = 1.5 * SCALING
 	Engine.prototype.set = function(width, height, planets, seed) {
-		this.width = width
-		this.height = height
+		this.width = width * SCALING
+		this.height = height * SCALING
 		this.planets = []
 
 		const rng = RND.newGenerator(seed)
@@ -19,7 +21,7 @@ var Engine = (function () {
 		// Generate random planets
 		let retries = 999
 		while(this.planets.length < planets && retries > 0) {
-			const newP = new Planet(rng, width, height)
+			const newP = new Planet(rng, this.width, this.height)
 
 			// Check if planet is not intersecting any other planet
 			let intersect = false
@@ -69,12 +71,16 @@ var Engine = (function () {
 		}
 	}
 
-	Engine.prototype.render = function(graphics, animationTime, renderBounds) {
+	Engine.prototype.render = function(graphics, animationTime) {
+		graphics.beginFill(0x080810)
+		graphics.drawRect(0, 0, this.width, this.height)
+		graphics.endFill()
+
 		for(const planet of this.planets) {
-			planet.render(graphics, renderBounds, animationTime)
+			planet.render(graphics, animationTime)
 		}
 		for(const ship of this.ships) {
-			ship.render(graphics, renderBounds, animationTime)
+			ship.render(graphics, animationTime)
 		}
 		return true
 	}
@@ -89,12 +95,10 @@ var Engine = (function () {
 })()
 
 var Planet = (function () {
-
-
 	function Planet(rng, width, height) {
-		this.x = rng.float(-width/2, width/2)
-		this.y = rng.float(-height/2, height/2)
-		this.size = rng.float(0.2, 0.8)
+		this.x = rng.float(SCALING, width - SCALING)
+		this.y = rng.float(SCALING, height - SCALING)
+		this.size = rng.float(0.2, 0.8) * SCALING
 		this.color = rng.int(0, 0xFFFFFF)
 		this.selected = false
 	}
@@ -108,14 +112,14 @@ var Planet = (function () {
 		return distance - this.size - planet.size
 	}
 
-	const BORDER_SIZE = .25
-	Planet.prototype.render = function(graphics, bounds, time) {
+	const BORDER_SIZE = .25 * SCALING
+	Planet.prototype.render = function(graphics, time) {
 		graphics.beginFill(0x808080, this.selected ? 1 : .25)
-		graphics.drawCircle(graphics.locX(this.x), graphics.locY(this.y), (this.size + BORDER_SIZE) * graphics.context.cS)
+		graphics.drawCircle(this.x, this.y, this.size + BORDER_SIZE)
 		graphics.endFill()
 
 		graphics.beginFill(this.color)
-		graphics.drawCircle(graphics.locX(this.x), graphics.locY(this.y), this.size * graphics.context.cS)
+		graphics.drawCircle(this.x, this.y, this.size)
 		graphics.endFill()
 	}
 
@@ -123,7 +127,6 @@ var Planet = (function () {
 })()
 
 var Ship = (function () {
-
 	function Ship(from, to, departureTime) {
 		this.fromPlanet = from
 		this.toPlanet = to
@@ -138,7 +141,7 @@ var Ship = (function () {
 		this.toLoc = {x: this.toPlanet.x + Math.cos(angle2) * this.toPlanet.size, y: this.toPlanet.y + Math.sin(angle2) * this.toPlanet.size}
 
 		// compute arrival time: departure time + distance (speed is 1 distance per turn)
-		this.arrivalTime = departureTime + (distancePointToPoint(this.fromLoc, this.toLoc))
+		this.arrivalTime = departureTime + (distancePointToPoint(this.fromLoc, this.toLoc)) / SCALING
 
 		// Set ship initial location
 		this.x = this.fromLoc.x
@@ -149,7 +152,6 @@ var Ship = (function () {
 	}
 
 	/**
-	 *
 	 * @param {number} turn Current turn of the game, remember that it can contains decimals
 	 * @returns {boolean} true if ship is in transit, false if not yet departed or arrived
 	 */
@@ -159,18 +161,17 @@ var Ship = (function () {
 		this.y = this.fromLoc.y + (this.toLoc.y - this.fromLoc.y) * progress
 	}
 
-	Ship.prototype.render = function(graphics, bounds, animationTime) {
+	Ship.prototype.render = function(graphics, animationTime) {
 		if(this.isArrived()) return false
-
 		const distance = distancePointToPoint(this.fromLoc, this)
 
 		// Draw ship as a circle around 'fromPlanet', with size equals to distance travelled
-		graphics.lineStyle(1, 0xFFFFFF, 1);
-		graphics.drawCircle(graphics.locX(this.fromPlanet.x), graphics.locY(this.fromPlanet.y), (this.fromPlanet.size + distance) * graphics.context.cS)
+		graphics.lineStyle(graphics.onePixel, 0xFFFFFF);
+		graphics.drawCircle(this.fromPlanet.x, this.fromPlanet.y, this.fromPlanet.size + distance)
 
 		// Draw ship as a line between 'fromLoc' and 'toLoc'
-		graphics.moveTo(graphics.locX(this.x), graphics.locY(this.y));
-		graphics.lineTo(graphics.locX(this.toLoc.x), graphics.locY(this.toLoc.y));
+		graphics.moveTo(this.x, this.y)
+		graphics.lineTo(this.toLoc.x, this.toLoc.y)
 	}
 
 	Ship.prototype.isArrived = function(turn) {
