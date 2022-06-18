@@ -76,3 +76,5 @@ Array.prototype.unorderedRm = function(value) {
 		this.length --
 	}
 }
+
+Array.prototype.copy = Array.prototype.slice

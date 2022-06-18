@@ -4,34 +4,58 @@
 	<title>Nlanets</title>
 	<meta charset="UTF-8"/>
 	<!-- External -->
-	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-	<script src="https://pixijs.download/v6.2.1/pixi.js"></script> <!-- use .min.js for prod -->
-	<script src="https://natngs.github.io/lib/rnd.js"></script>
+	<!--script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+	<script src="https://pixijs.download/v6.2.1/pixi.js"></script--> <!-- use .min.js for prod -->
+	<!--script src="https://natngs.github.io/lib/rnd.js"></script-->
+
+	<script src="devDependencies/jquery.min.js"></script>
+	<script src="devDependencies/pixi.js"></script>
+	<script src="devDependencies/rnd.js"></script>
 
 	<!-- Internal -->
 	<script src="scripts/polyfill.js"></script>
-	<script src="scripts/Viewport.js"></script>
-	<script src="scripts/Engine.js"></script>
 	<script src="scripts/Maths.js"></script>
+
+	<script src="scripts/GameEngine.js"></script>
+
+	<script src="scripts/players/AbstractPlayer.js"></script>
+	<script src="scripts/players/PlayerAI.js"></script>
+	<script src="scripts/Viewport.js"></script>
+	<script src="scripts/players/PlayerHuman.js"></script>
+
+	<!-- CSS -->
 	<link rel="stylesheet" href="styles/main.css">
 
 	<script>
-		let DEBUG = null
+		var DEBUG = null
 
 		// On body load
 		$(document).ready(function() {
-			const E = new Engine()
-			E.set(25, 25, 25, 42)
+			// Setup Game Engine
+			const GAME_ENGINE = new GameEngine(25, 25, 25, '42')
 
-			const elementsList = [
-				'viewport', 'btn-nextTurn', 'label-turn'
-			]
-			const elements = {}
+			// Setup AI player
+			const AI1 = new PlayerAI('AI1', 0, GAME_ENGINE)
+
+			const AI2 = new PlayerAI('AI2', 50, GAME_ENGINE)
+
+			// Setup Player
+			const PLAYER = new PlayerHuman('Human', 180, GAME_ENGINE)
+
+			// Prepare Player Viewport
+			const elementsList = ['viewport', 'btn-nextTurn', 'label-turn']
+			const htmlViewportElements = {}
 			for(const id of elementsList) {
-				elements[id] = $('[id="' + id  +'"]')
+				htmlViewportElements[id] = $('[id="' + id  +'"]')
 			}
-			const V = new Viewport(elements, E)
-			DEBUG = {viewport: V, engine: E}
+			const V = new Viewport(htmlViewportElements, PLAYER)
+
+			// Start the game
+			GAME_ENGINE.start()
+
+
+			// Add debug tools
+			DEBUG = {GAME_ENGINE, PLAYER, AI1, AI2}
 		})
 	</script>
 </head>
