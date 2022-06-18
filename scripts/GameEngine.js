@@ -5,7 +5,8 @@ var GameEngine = (function() {
 	const MIN_PLANET_SIZE = .25
 	const MAX_PLANET_SIZE = .75
 	const MIN_DISTANCE_BETWEEN_PLANETS = 1.5
-	const RADAR_RANGE = 1.5 // Distance around player's planet where all ship information are known
+	const PLANET_RADAR_RANGE = 1.5 // Distance around player's planet where all ship information are known
+	const SHIP_RADAR_RANGE = 1 // Distance around player's ship where all ship & planet information are known
 
 	// // // GAME ENGINE // // //
 
@@ -173,29 +174,68 @@ var GameEngine = (function() {
 			return nextEventTurn
 		}
 
-		updateSinglePlayer(player) {
+		hasPlayerLost(player) {
+			// Player has lost if: Own no planet && no ship
+			return this.planets.filter(p => p.owner === player).length === 0 && this.ships.filter(s => s.owner === player).length === 0
+		}
+
+		updateSinglePlayer(player, arrivedShips=null) {
 			const instantData = {
 				turn: this.turn,
 				planets: {},
 				ships: {},
 			}
 
+			const hasLost = this.hasPlayerLost(player)
+
+			const myArrivedShips = (arrivedShips || []).filter(s => s.owner === player)
+			const myPlanets = this.planets.filter(p => p.owner === player)
+			const myFlyingShips = this.ships.filter(s => s.owner === player)
+
 			for(const planet of this.planets) {
-				instantData.planets[planet.name] = planet.getInstantData(planet.owner === player)
+				let showFullData = hasLost || planet.owner === player
+				if(!showFullData) {
+					// Show full data if any ship as arrive to this planet
+					for(const ship of myArrivedShips) {
+						if(ship.planetDestination === planet) {
+							showFullData = true
+							break
+						}
+					}
+				}
+				if(!showFullData) {
+					for(const ship of myFlyingShips) {
+						// If planet center is in range of ship, show full data
+						if(ship.distanceTo(planet) <= SHIP_RADAR_RANGE) {
+							showFullData = true
+							break
+						}
+					}
+				}
+				instantData.planets[planet.name] = planet.getInstantData(showFullData)
 			}
 			for(const ship of this.ships) {
 				// Only update ship if owner is player OR if ship is near player's territory
-				let showShipData = ship.owner === player
+				let showFullShipData = hasLost || ship.owner === player
+				let showShipData = showFullShipData
 				if(!showShipData) {
-					for(const planet of this.planets) {
-						if(planet.owner === player && planet.distanceTo(ship, true) <= RADAR_RANGE) {
+					for(const planet of myPlanets) {
+						if(planet.distanceTo(ship, true) <= PLANET_RADAR_RANGE) {
 							showShipData = true
 							break
 						}
 					}
 				}
+				if(!showShipData) {
+					for(const ship2 of myFlyingShips) {
+						if(ship.distanceTo(ship2, true) <= SHIP_RADAR_RANGE) {
+							showFullShipData = showShipData = true
+							break
+						}
+					}
+				}
 				if(showShipData) {
-					instantData.ships[ship.id] = ship.getInstantData(ship.owner === player)
+					instantData.ships[ship.id] = ship.getInstantData(showFullShipData)
 				}
 			}
 			player.update(instantData)
@@ -232,7 +272,7 @@ var GameEngine = (function() {
 
 			// Update player information
 			for(const player of this.players) {
-				this.updateSinglePlayer(player)
+				this.updateSinglePlayer(player, arrivedShips)
 			}
 		}
 	}
@@ -294,7 +334,7 @@ var GameEngine = (function() {
 
 	// // // SPACE SHIP // // //
 	let shipIds = {} // [origin][destination] = number
-	class SpaceShip {
+	class SpaceShip extends Point {
 
 		/**
 		 * @param {Planet} planetOrigin
@@ -304,6 +344,8 @@ var GameEngine = (function() {
 		 * @param {number} crewSize
 		 */
 		constructor(planetOrigin, planetDestination, turnOrigin, turnDestination, crewSize) {
+			super(planetOrigin.x, planetOrigin.y)
+
 			// Set ship id
 			const idListOrigin = shipIds[planetOrigin.name] || []
 			shipIds[planetOrigin.name] = idListOrigin
@@ -331,15 +373,24 @@ var GameEngine = (function() {
 			// Set to starting location
 			this.x = this.pointOrigin.x
 			this.y = this.pointOrigin.y
+			this.progress = 0
 		}
 
-		update(currentTurn) {
+		location(currentTurn) {
 			const progress = (currentTurn - this.turnOrigin) / (this.turnDestination - this.turnOrigin)
+			if(progress < 0) return this.pointOrigin
+			if(progress > 1) return this.pointDestination
 
-			if(progress >= 0 && progress <= 1) {
-				this.x = this.pointOrigin.x + (this.pointDestination.x - this.pointOrigin.x) * progress
-				this.y = this.pointOrigin.y + (this.pointDestination.y - this.pointOrigin.y) * progress
-			}
+			const x = this.pointOrigin.x + (this.pointDestination.x - this.pointOrigin.x) * progress
+			const y = this.pointOrigin.y + (this.pointDestination.y - this.pointOrigin.y) * progress
+			return new Point(x, y)
+		}
+		update(currentTurn) {
+			this.progress = (currentTurn - this.turnOrigin) / (this.turnDestination - this.turnOrigin)
+
+			const xy = this.location(currentTurn)
+			this.x = xy.x
+			this.y = xy.y
 		}
 
 		applyArrival() {

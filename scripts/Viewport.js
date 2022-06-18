@@ -22,13 +22,39 @@ var Viewport = (function() {
 	const ZOOM_SPEED = 16
 	const MAP_MOVE_SENSITIVITY = 1
 	const TURNS_PER_SECOND = 1
-	const BORDER_SIZE = .5 // Circle of selection around planets, in game units
-
-
+	const BORDER_SIZE = 0.5 // Circle of selection around planets, in game units
+	const PLANET_RADAR_RADIUS = 1.5
+	const SHIP_RADAR_RADIUS = 1
+	const RADAR_COUNT = 4
+	const RADAR_FREQUENCY = 8 // duration of radar animation (seconds)
 	const PLANET_NAME_FONT_SIZE = 22
+	const QUALITY_UPGRADE = 16 // Increase this value to improve graphics accuracy; but also increases graphics computation time (lag)
 
+	class RadarRenderer extends PIXI.Graphics {
+		constructor(radarData) {
+			super()
+			this.randomShift = Math.random()
+			this.radarData = radarData
+			const scale = (radarData.scale||1)/QUALITY_UPGRADE
+			this.scale = new PIXI.Point(scale, scale)
+		}
 
-	const QUALITY_UPGRADE = 16
+		update(context, animationTime) {
+			this.clear()
+
+			const onePx = context.onePixel * QUALITY_UPGRADE
+			//const color = hsl2rgb(this.rendererPlayer.color, 1, .7)
+			const baseProgress = (animationTime % this.radarData.frequency)/this.radarData.frequency + this.randomShift
+
+			for(let i=this.radarData.waveCount; i>0; i--) {
+				const progress = (baseProgress + i/this.radarData.waveCount) % 1
+
+				// Growing circle
+				this.lineStyle(onePx, this.radarData.color, 1-progress)
+				this.drawCircle(0, 0, QUALITY_UPGRADE * (this.radarData.minRange + (Math.pow(progress, 1/4) * (this.radarData.maxRange - this.radarData.minRange))))
+			}
+		}
+	}
 	class PlanetRenderer extends PIXI.Graphics {
 
 		/**
@@ -58,6 +84,17 @@ var Viewport = (function() {
 			this.planet.drawCircle(0, 0, planetData.size * QUALITY_UPGRADE)
 			this.planet.endFill()
 
+			// Radar
+			this.radar = new RadarRenderer({
+				waveCount: 2,
+				frequency: 8+Math.random()*.5,
+				minRange: this.data.size,
+				maxRange: this.data.size + PLANET_RADAR_RADIUS,
+				scale: QUALITY_UPGRADE,
+				color: null // defined dynamically
+			})
+			this.radar.visible = false
+
 			// Planet name
 			this.nameBox = new PIXI.Graphics()
 			this.nameText = new PIXI.Text(planetData.name, {
@@ -84,58 +121,86 @@ var Viewport = (function() {
 			this.populationBox.nlanetsData = {population: false}
 
 			// Add layers
-			this.addChild(this.highlight) // Background
+			this.addChild(this.radar) // Background
+			this.addChild(this.highlight)
 			this.addChild(this.planet)
 			this.addChild(this.nameBox)
-			this.addChild(this.populationBox)
+			this.addChild(this.populationBox) // Foreground
 
 			// Listeners
 			this.on('pointertap', this.onClick)
 		}
 
 		update(context, turn, animationTime) {
-			const timeSinceLastUpdate = turn - this.data.turn
+			// Planet highlight (owner)
+			let ownerChanged = false
+			if('owner' in this.data) {
+				this.highlight.nlanetsData.updatedOwner = turn
+				if((this.highlight.nlanetsData.owner && !this.data.owner)
+					|| (!this.highlight.nlanetsData.owner && this.data.owner)
+					|| (this.highlight.nlanetsData.owner && this.data.owner && this.highlight.nlanetsData.owner.name !== this.data.owner.name)) {
+					ownerChanged = true
+					this.highlight.nlanetsData.owner = this.data.owner
+				}
+			} else if(this.highlight.nlanetsData.owner && this.highlight.nlanetsData.owner.name === this.rendererPlayer.name) {
+				// Viewport player lost a planet; we are sure this planet is no more his property
+				ownerChanged = true
+				this.highlight.nlanetsData.owner = {name: null, color: 0xFF0000}
+			}
 
-			// Update planet highlight
-			if( (!this.data.owner && this.highlight.nlanetsData.owner)
-				|| this.data.owner && (
-					this.highlight.nlanetsData.owner !== this.data.owner.name
-					|| this.highlight.nlanetsData.selected !== this.data.selected)) {
-
-				const fillColor = (this.data.owner)
-					? hsl2rgb(this.data.owner.color, 1, .5) // colorful
+			if(ownerChanged || this.highlight.nlanetsData.selected !== this.data.selected) {
+				const owner = this.highlight.nlanetsData.owner
+				const selected = (this.highlight.nlanetsData.selected = this.data.selected)
+				const fillColor = (owner)
+					? hsl2rgb(owner.color, 1, .5) // colorful
 					: hsl2rgb(0, 0, .5) // white
 
 				this.highlight.clear()
-				this.highlight.beginFill(fillColor, this.data.selected ? 1 : (this.data.owner ? .25 : 0))
+				this.highlight.beginFill(fillColor)
 				this.highlight.drawCircle(0, 0, (this.data.size + BORDER_SIZE) * QUALITY_UPGRADE)
 				this.highlight.endFill()
+			}
+			const since = turn - this.highlight.nlanetsData.updatedOwner
+			this.highlight.alpha = this.highlight.nlanetsData.selected ? 1 : (this.highlight.nlanetsData.owner ? 1 / (since + 3) : 0)
 
-				this.highlight.nlanetsData.owner = this.data.owner ? this.data.owner.name : null
-				this.highlight.nlanetsData.selected = this.data.selected
+			// Planet Radar
+			if(this.data.owner && this.data.owner.name === this.rendererPlayer.name) {
+				this.radar.visible = true
+				this.radar.radarData.color = hsl2rgb(this.data.owner.color, 1, .7)
+			} else {
+				this.radar.visible = false
 			}
 
 			// Planet Population
-			const currentPopulation = this.data.population !== undefined ? (this.data.population|0) : '?'
-			if(this.populationBox.nlanetsData.lastPop !== currentPopulation) {
-				if(this.populationText) {
-					this.populationText.destroy()
-					this.populationBox.removeChildren()
+			if('population' in this.data) {
+				if(this.populationBox.nlanetsData.lastPop !== this.data.population) {
+					if(this.populationText) {
+						this.populationText.destroy()
+						this.populationBox.removeChildren()
+					}
+
+					this.populationText = new PIXI.Text(this.data.population, {
+						fontFamily: 'Arial',
+						fontSize: PLANET_NAME_FONT_SIZE * QUALITY_UPGRADE,
+						align: 'left',
+						fill: '0xFFFFFF',
+					})
+					this.populationBox.addChild(this.populationText)
+
+					this.populationBox.nlanetsData.lastPop = this.data.population
 				}
 
-				this.populationText = new PIXI.Text(currentPopulation, {
-					fontFamily: 'Arial',
-					fontSize: PLANET_NAME_FONT_SIZE * QUALITY_UPGRADE,
-					align: 'left',
-					fill: '0xFFFFFF',
-				})
-				this.populationBox.addChild(this.populationText)
-
-				this.populationBox.nlanetsData.lastPop = currentPopulation
+				this.populationBox.nlanetsData.updated = turn
 			}
-			this.populationBox.height = PLANET_NAME_FONT_SIZE*context.onePixel * QUALITY_UPGRADE
-			this.populationBox.width = this.populationText.width * this.populationBox.height/this.populationText.height
-			this.populationBox.alpha = 1 / (timeSinceLastUpdate + 1)
+			if(this.populationText) {
+				this.populationBox.height = PLANET_NAME_FONT_SIZE*context.onePixel * QUALITY_UPGRADE
+				this.populationBox.width = this.populationText.width * this.populationBox.height/this.populationText.height
+				const since = turn - this.populationBox.nlanetsData.updated
+				this.populationBox.alpha = 1 / (since + 1)
+			}
+
+			// Planet Radar
+			this.radar.update(context, animationTime)
 		}
 
 		/**
@@ -155,29 +220,72 @@ var Viewport = (function() {
 
 			this.data = shipData
 			this.player = player
+
+			this.subGraphics = new PIXI.Graphics()
+			this.addChild(this.subGraphics)
+
+			if(this.data.owner && this.player.name === this.data.owner.name) {
+				this.radar = new RadarRenderer({
+					waveCount: 1,
+					frequency: 5 + Math.random()*.5,
+					minRange: 0,
+					maxRange: SHIP_RADAR_RADIUS,
+					color: hsl2rgb(this.player.color, .5, .5)
+				})
+				this.addChild(this.radar)
+			}
 		}
 
 		update(context, turn, animationTime) {
-			this.clear()
+			this.subGraphics.clear()
 
-			this.lineStyle(context.onePixel, this.data.owner ? hsl2rgb(this.data.owner.color, 1, .7) : 0xFFFFFF)
+			this.subGraphics.lineStyle(context.onePixel, this.data.owner ? hsl2rgb(this.data.owner.color, 1, .7) : 0xFFFFFF)
 
-			let crossSize = 1
-			if(this.data.owner && this.player.name === this.data.owner.name) {
+			const crossSize = 6 * context.onePixel
+			if(this.data.destination) {
 				// Draw ship as a line between 'fromLoc' and 'toLoc'
-				this.moveTo(this.data.x, this.data.y)
-				this.lineTo(this.data.destination.x, this.data.destination.y)
-				crossSize = 6 * context.onePixel
-			} else {
+				this.subGraphics.moveTo(this.data.x, this.data.y)
+				this.subGraphics.lineTo(this.data.destination.x, this.data.destination.y)
+			} else if(!this.data.nextTurnLocation) {
 				// Draw circle where the ship can go
-				this.drawCircle(this.data.x, this.data.y, 1)
+				this.subGraphics.drawCircle(this.data.x, this.data.y, 1)
+			}
+
+			if(this.data.nextTurnLocation) {
+				this.subGraphics.moveTo(this.data.x, this.data.y)
+				this.subGraphics.lineTo(this.data.nextTurnLocation.x, this.data.nextTurnLocation.y)
+
+				// Draw arrow attached to nextTurnLocation, size crossSize, facing in direction from this.data to this.data.nextTurnLocation
+				const angleDirection = Math.atan2(this.data.nextTurnLocation.y - this.data.y, this.data.nextTurnLocation.x - this.data.x)
+				const angleFleche1 = angleDirection + 3*Math.PI/4
+				const angleFleche2 = angleDirection - 3*Math.PI/4
+
+				this.subGraphics.lineTo(
+					this.data.nextTurnLocation.x + Math.cos(angleFleche1) * crossSize,
+					this.data.nextTurnLocation.y + Math.sin(angleFleche1) * crossSize
+				)
+				this.subGraphics.moveTo(
+					this.data.nextTurnLocation.x,
+					this.data.nextTurnLocation.y
+				)
+				this.subGraphics.lineTo(
+					this.data.nextTurnLocation.x + Math.cos(angleFleche2) * crossSize,
+					this.data.nextTurnLocation.y + Math.sin(angleFleche2) * crossSize
+				)
 			}
 
 			// Draw a cross to mark the ship
-			this.moveTo(this.data.x -crossSize, this.data.y)
-			this.lineTo(this.data.x +crossSize, this.data.y)
-			this.moveTo(this.data.x, this.data.y -crossSize)
-			this.lineTo(this.data.x, this.data.y +crossSize)
+			this.subGraphics.moveTo(this.data.x -crossSize, this.data.y)
+			this.subGraphics.lineTo(this.data.x +crossSize, this.data.y)
+			this.subGraphics.moveTo(this.data.x, this.data.y -crossSize)
+			this.subGraphics.lineTo(this.data.x, this.data.y +crossSize)
+
+			// Radar
+			if(this.radar) {
+				this.radar.update(context, animationTime)
+				this.radar.x = this.data.x
+				this.radar.y = this.data.y
+			}
 		}
 	}
 	class Renderer extends PIXI.Graphics {
@@ -253,9 +361,6 @@ var Viewport = (function() {
 			this.player.onClick(event)
 		}
 	}
-
-
-
 
 	class Viewport {
 		/**

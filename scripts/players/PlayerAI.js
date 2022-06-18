@@ -68,14 +68,6 @@ var PlayerAI = (function () {
 			const turnOrigin = this.turn + Math.random() // Random delay between 0 & 1turn
 			const turnDestination = turnOrigin + this.game.getPlanetDistance(myBestPlanet.name, target.name) * (1+Math.random()) // Speed random from normal to half
 
-			console.log('AI send ship:', myBestPlanet.name, target.name, shipSize, {
-				myBestPlanet,
-				target,
-				actData: this.actData,
-				turnOrigin,
-				turnDestination,
-			})
-
 			this.game.sendShip(myBestPlanet.name, target.name, shipSize, turnOrigin, turnDestination)
 			this.actData.lastSentShipSize = shipSize
 

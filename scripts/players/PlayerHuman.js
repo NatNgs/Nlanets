@@ -19,6 +19,7 @@ var PlayerHuman = (function () {
 
 		update(data) {
 			this.turn = data.turn
+
 			for(const planetName in data.planets) {
 				if(!this.planets[planetName]) {
 					this.planets[planetName] = {}
@@ -27,20 +28,42 @@ var PlayerHuman = (function () {
 				for(const property in data.planets[planetName]) {
 					this.planets[planetName][property] = data.planets[planetName][property]
 				}
+				for(const property in this.planets[planetName]) {
+					if(!(property in data.planets[planetName])) {
+						delete this.planets[planetName][property]
+					}
+				}
 				this.planets[planetName].updated = data.turn
 			}
-			for(const shipName in data.ships) {
-				if(!this.ships[shipName]) {
-					this.ships[shipName] = {}
+			for(const shipId in data.ships) {
+				if(!this.ships[shipId]) {
+					this.ships[shipId] = {
+						firstKnownLocation: new Point(data.ships[shipId]),
+					}
+					this.ships[shipId].firstKnownLocation.turn = data.turn
 				}
-				for(const property in data.ships[shipName]) {
-					this.ships[shipName][property] = data.ships[shipName][property]
+				const firstKnownLocation = this.ships[shipId].firstKnownLocation
+				for(const property in data.ships[shipId]) {
+					this.ships[shipId][property] = data.ships[shipId][property]
 				}
-				this.ships[shipName].updated = data.turn
+				for(const property in this.ships[shipId]) {
+					if(!property in data.ships[shipId]) {
+						delete this.ships[shipId][property]
+					}
+				}
+				this.ships[shipId].firstKnownLocation = firstKnownLocation
+				this.ships[shipId].updated = data.turn
+
+				if(firstKnownLocation.turn < data.turn) {
+					// Compute next turn location
+					const speedX = (this.ships[shipId].x - firstKnownLocation.x) / (data.turn - firstKnownLocation.turn)
+					const speedY = (this.ships[shipId].y - firstKnownLocation.y) / (data.turn - firstKnownLocation.turn)
+					this.ships[shipId].nextTurnLocation = new Point(this.ships[shipId].x + speedX, this.ships[shipId].y + speedY)
+				}
 			}
-			for(const shipName in this.ships) {
-				if(!data.ships[shipName]) {
-					delete this.ships[shipName]
+			for(const shipId in this.ships) {
+				if(!data.ships[shipId]) {
+					delete this.ships[shipId]
 				}
 			}
 		}
