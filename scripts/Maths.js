@@ -12,6 +12,10 @@ class Point {
 	distanceTo(point) {
 		return Math.hypot(this.x-point.x, this.y-point.y)
 	}
+
+	get vectorLength() {
+		return Math.hypot(this.x, this.y)
+	}
 }
 class Line {
 	constructor(p1,p2) {

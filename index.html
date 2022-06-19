@@ -20,7 +20,8 @@
 
 	<script src="scripts/players/AbstractPlayer.js"></script>
 	<script src="scripts/players/PlayerAI.js"></script>
-	<script src="scripts/Viewport.js"></script>
+	<script src="scripts/display/CullableRenderer.js"></script>
+	<script src="scripts/display/Viewport.js"></script>
 	<script src="scripts/players/PlayerHuman.js"></script>
 
 	<!-- CSS -->
@@ -32,18 +33,20 @@
 		// On body load
 		$(document).ready(function() {
 			// Setup Game Engine
-			const GAME_ENGINE = new GameEngine(25, 25, 25, '42')
+			const GAME_ENGINE = new GameEngine(25, 25, 25)
 
 			// Setup AI player
+			const pNumb = 6
 			const AI1 = new PlayerAI('AI1', 0, GAME_ENGINE)
-
-			const AI2 = new PlayerAI('AI2', 50, GAME_ENGINE)
+			for(let i=2;i<pNumb; i++) {
+				new PlayerAI('AI' + i, i*360/(pNumb+1), GAME_ENGINE)
+			}
 
 			// Setup Player
-			const PLAYER = new PlayerHuman('Human', 180, GAME_ENGINE)
+			const PLAYER = new PlayerHuman('Human', pNumb*360/(pNumb+1), GAME_ENGINE)
 
 			// Prepare Player Viewport
-			const elementsList = ['viewport', 'btn-nextTurn', 'label-turn']
+			const elementsList = ['viewport', 'btn-nextTurn', 'label-turn', 'chk-autorun']
 			const htmlViewportElements = {}
 			for(const id of elementsList) {
 				htmlViewportElements[id] = $('[id="' + id  +'"]')
@@ -55,7 +58,7 @@
 
 
 			// Add debug tools
-			DEBUG = {GAME_ENGINE, PLAYER, AI1, AI2}
+			DEBUG = {GAME_ENGINE, PLAYER, AI1}
 		})
 	</script>
 </head>
@@ -63,6 +66,7 @@
 	<div id="toolbar">
 		<span id="label-turn"></span>
 		<button id="btn-nextTurn">Next Turn</button>
+		<input type="checkbox" id="chk-autorun">Autorun</button>
 	</div>
 	<div id="viewport"></div>
 </body>

@@ -18,7 +18,7 @@ class AbstractPlayer {
 	 */
 	constructor(name, color, game) {
 		this.name = name
-		this.color = color
+		this.color = (+color|0)%360
 
 		// Register player to the game
 		this.game = game.registerPlayer(this)

@@ -25,8 +25,6 @@ var Viewport = (function() {
 	const BORDER_SIZE = 0.5 // Circle of selection around planets, in game units
 	const PLANET_RADAR_RADIUS = 1.5
 	const SHIP_RADAR_RADIUS = 1
-	const RADAR_COUNT = 4
-	const RADAR_FREQUENCY = 8 // duration of radar animation (seconds)
 	const PLANET_NAME_FONT_SIZE = 22
 	const QUALITY_UPGRADE = 16 // Increase this value to improve graphics accuracy; but also increases graphics computation time (lag)
 
@@ -37,6 +35,14 @@ var Viewport = (function() {
 			this.radarData = radarData
 			const scale = (radarData.scale||1)/QUALITY_UPGRADE
 			this.scale = new PIXI.Point(scale, scale)
+
+			this.cullable = true
+			this.cullArea = new PIXI.Rectangle(
+				-this.radarData.maxRange * QUALITY_UPGRADE,
+				-this.radarData.maxRange * QUALITY_UPGRADE,
+				2*this.radarData.maxRange* QUALITY_UPGRADE,
+				2*this.radarData.maxRange* QUALITY_UPGRADE
+			)
 		}
 
 		update(context, animationTime) {
@@ -55,7 +61,7 @@ var Viewport = (function() {
 			}
 		}
 	}
-	class PlanetRenderer extends PIXI.Graphics {
+	class PlanetRenderer extends CullableRenderer {
 
 		/**
 		 * @param {*} planetData
@@ -91,7 +97,7 @@ var Viewport = (function() {
 				minRange: this.data.size,
 				maxRange: this.data.size + PLANET_RADAR_RADIUS,
 				scale: QUALITY_UPGRADE,
-				color: null // defined dynamically
+				color: hsl2rgb(planetData.color, 1, .7)
 			})
 			this.radar.visible = false
 
@@ -102,7 +108,9 @@ var Viewport = (function() {
 				fontSize: PLANET_NAME_FONT_SIZE * QUALITY_UPGRADE,
 				align: 'left',
 				fill: '0xFFFFFF',
+				color: hsl2rgb(rendererPlayer.color, 1, .7),
 			})
+			this.nameText.cacheAsBitmap = true
 			this.nameBox.addChild(this.nameText)
 			this.nameText.x = -this.nameText.width / 2
 			this.nameText.y = -this.nameText.height / 2
@@ -129,13 +137,18 @@ var Viewport = (function() {
 
 			// Listeners
 			this.on('pointertap', this.onClick)
+
+			// Improve performances (hide component when out of view)
+			this.cullArea = this.radar.cullArea
 		}
 
-		update(context, turn, animationTime) {
+		update(context, animationTime) {
+			if(!this.displayed) return // Culling: Element is not visible
+
 			// Planet highlight (owner)
 			let ownerChanged = false
 			if('owner' in this.data) {
-				this.highlight.nlanetsData.updatedOwner = turn
+				this.highlight.nlanetsData.updatedOwner = this.data.turn
 				if((this.highlight.nlanetsData.owner && !this.data.owner)
 					|| (!this.highlight.nlanetsData.owner && this.data.owner)
 					|| (this.highlight.nlanetsData.owner && this.data.owner && this.highlight.nlanetsData.owner.name !== this.data.owner.name)) {
@@ -145,7 +158,8 @@ var Viewport = (function() {
 			} else if(this.highlight.nlanetsData.owner && this.highlight.nlanetsData.owner.name === this.rendererPlayer.name) {
 				// Viewport player lost a planet; we are sure this planet is no more his property
 				ownerChanged = true
-				this.highlight.nlanetsData.owner = {name: null, color: 0xFF0000}
+				this.highlight.nlanetsData.population = 0
+				this.highlight.nlanetsData.owner = null
 			}
 
 			if(ownerChanged || this.highlight.nlanetsData.selected !== this.data.selected) {
@@ -160,15 +174,14 @@ var Viewport = (function() {
 				this.highlight.drawCircle(0, 0, (this.data.size + BORDER_SIZE) * QUALITY_UPGRADE)
 				this.highlight.endFill()
 			}
-			const since = turn - this.highlight.nlanetsData.updatedOwner
-			this.highlight.alpha = this.highlight.nlanetsData.selected ? 1 : (this.highlight.nlanetsData.owner ? 1 / (since + 3) : 0)
+			const since = this.data.turn - this.highlight.nlanetsData.updatedOwner
+			this.highlight.alpha = this.highlight.nlanetsData.selected ? .75 : (this.highlight.nlanetsData.owner ? 1 / (since + 3) : 0)
 
-			// Planet Radar
-			if(this.data.owner && this.data.owner.name === this.rendererPlayer.name) {
-				this.radar.visible = true
-				this.radar.radarData.color = hsl2rgb(this.data.owner.color, 1, .7)
-			} else {
-				this.radar.visible = false
+			// Radar
+			this.radar.visible = this.data.radar && this.data.radar.ships.length > 0
+			if(this.radar.visible) {
+				this.radar.radarData.waveCount = this.data.radar.ships.length + 1
+				this.radar.update(context, animationTime)
 			}
 
 			// Planet Population
@@ -185,22 +198,20 @@ var Viewport = (function() {
 						align: 'left',
 						fill: '0xFFFFFF',
 					})
+					this.populationText.cacheAsBitmap = true
 					this.populationBox.addChild(this.populationText)
 
 					this.populationBox.nlanetsData.lastPop = this.data.population
 				}
 
-				this.populationBox.nlanetsData.updated = turn
+				this.populationBox.nlanetsData.updated = this.data.turn
 			}
 			if(this.populationText) {
 				this.populationBox.height = PLANET_NAME_FONT_SIZE*context.onePixel * QUALITY_UPGRADE
 				this.populationBox.width = this.populationText.width * this.populationBox.height/this.populationText.height
-				const since = turn - this.populationBox.nlanetsData.updated
+				const since = this.data.turn - this.populationBox.nlanetsData.updated
 				this.populationBox.alpha = 1 / (since + 1)
 			}
-
-			// Planet Radar
-			this.radar.update(context, animationTime)
 		}
 
 		/**
@@ -232,45 +243,66 @@ var Viewport = (function() {
 					maxRange: SHIP_RADAR_RADIUS,
 					color: hsl2rgb(this.player.color, .5, .5)
 				})
+				this.radar.visible = false
 				this.addChild(this.radar)
 			}
 		}
 
-		update(context, turn, animationTime) {
+		update(context, animationTime) {
 			this.subGraphics.clear()
 
-			this.subGraphics.lineStyle(context.onePixel, this.data.owner ? hsl2rgb(this.data.owner.color, 1, .7) : 0xFFFFFF)
-
 			const crossSize = 6 * context.onePixel
-			if(this.data.destination) {
+			this.subGraphics.lineStyle(context.onePixel, this.data.owner ? hsl2rgb(this.data.owner.color, 1, .7) : 0xFFFFFF, .5)
+			if(this.data.turnDestination) { // Destination & Speed are known
 				// Draw ship as a line between 'fromLoc' and 'toLoc'
+				const remainingFlighTime = this.data.turnDestination - this.data.turn
+				let shift = 2- (animationTime % (2*TURNS_PER_SECOND) / TURNS_PER_SECOND)
+
+				if(remainingFlighTime < 1) {
+					this.subGraphics.moveTo(this.data.x, this.data.y)
+					this.subGraphics.lineTo(this.data.destination.x, this.data.destination.y)
+				} else {
+					// Last stroke
+					if(shift > 1) {
+						this.subGraphics.moveTo(this.data.destination.x, this.data.destination.y)
+						this.subGraphics.lineTo(this.data.destination.x - (shift-1)*this.data.speed.x, this.data.destination.y - (shift-1)*this.data.speed.y)
+					}
+
+					// Middle strokes
+					while(shift<remainingFlighTime-1) {
+						this.subGraphics.moveTo(this.data.destination.x - shift*this.data.speed.x, this.data.destination.y - shift*this.data.speed.y)
+						this.subGraphics.lineTo(this.data.destination.x - (shift+1)*this.data.speed.x, this.data.destination.y - (shift+1)*this.data.speed.y)
+
+						shift += 2
+					}
+				}
+			} else if(this.data.destination && !this.data.speed) { // Destination is known but not Speed
 				this.subGraphics.moveTo(this.data.x, this.data.y)
 				this.subGraphics.lineTo(this.data.destination.x, this.data.destination.y)
-			} else if(!this.data.nextTurnLocation) {
-				// Draw circle where the ship can go
-				this.subGraphics.drawCircle(this.data.x, this.data.y, 1)
 			}
 
-			if(this.data.nextTurnLocation) {
-				this.subGraphics.moveTo(this.data.x, this.data.y)
-				this.subGraphics.lineTo(this.data.nextTurnLocation.x, this.data.nextTurnLocation.y)
+			this.subGraphics.lineStyle(context.onePixel, this.data.owner ? hsl2rgb(this.data.owner.color, 1, .7) : 0xFFFFFF)
+			if(this.data.speed) { // Show Arrow if speed is known
+				const nextIsDestination = this.data.turnDestination && this.data.turnDestination - this.data.turn < 1
+				const nextX = nextIsDestination ? this.data.destination.x : this.data.x + this.data.speed.x
+				const nextY = nextIsDestination ? this.data.destination.y : this.data.y + this.data.speed.y
 
-				// Draw arrow attached to nextTurnLocation, size crossSize, facing in direction from this.data to this.data.nextTurnLocation
-				const angleDirection = Math.atan2(this.data.nextTurnLocation.y - this.data.y, this.data.nextTurnLocation.x - this.data.x)
+				this.subGraphics.moveTo(this.data.x, this.data.y)
+				this.subGraphics.lineTo(nextX, nextY)
+
+				// Draw arrow from ship location to estimated nextTurn ship location
+				const angleDirection = Math.atan2(this.data.speed.y, this.data.speed.x)
 				const angleFleche1 = angleDirection + 3*Math.PI/4
 				const angleFleche2 = angleDirection - 3*Math.PI/4
 
 				this.subGraphics.lineTo(
-					this.data.nextTurnLocation.x + Math.cos(angleFleche1) * crossSize,
-					this.data.nextTurnLocation.y + Math.sin(angleFleche1) * crossSize
+					nextX + Math.cos(angleFleche1) * crossSize,
+					nextY + Math.sin(angleFleche1) * crossSize
 				)
-				this.subGraphics.moveTo(
-					this.data.nextTurnLocation.x,
-					this.data.nextTurnLocation.y
-				)
+				this.subGraphics.moveTo(nextX, nextY)
 				this.subGraphics.lineTo(
-					this.data.nextTurnLocation.x + Math.cos(angleFleche2) * crossSize,
-					this.data.nextTurnLocation.y + Math.sin(angleFleche2) * crossSize
+					nextX + Math.cos(angleFleche2) * crossSize,
+					nextY + Math.sin(angleFleche2) * crossSize
 				)
 			}
 
@@ -282,9 +314,13 @@ var Viewport = (function() {
 
 			// Radar
 			if(this.radar) {
-				this.radar.update(context, animationTime)
-				this.radar.x = this.data.x
-				this.radar.y = this.data.y
+				this.radar.visible = this.data.radar && this.data.radar.ships.length > 0
+				if(this.radar.visible) {
+					this.radar.radarData.waveCount = this.data.radar.ships.length
+					this.radar.x = this.data.x
+					this.radar.y = this.data.y
+					this.radar.update(context, animationTime)
+				}
 			}
 		}
 	}
@@ -323,7 +359,7 @@ var Viewport = (function() {
 
 			// Update planets
 			for(const planetName in this.planetRenderers) {
-				this.planetRenderers[planetName].update(context, this.player.turn, animationTime)
+				this.planetRenderers[planetName].update(context, animationTime)
 			}
 
 			// Add missing ships
@@ -339,7 +375,7 @@ var Viewport = (function() {
 			for(const shipId in this.shipRenderers) {
 				const shipData = this.player.ships[shipId]
 				if(shipData && !shipData.isArrived) {
-					this.shipRenderers[shipId].update(context, this.player.turn, animationTime)
+					this.shipRenderers[shipId].update(context, animationTime)
 				} else {
 					this.shipRenderers[shipId].destroy()
 					delete this.shipRenderers[shipId]
@@ -431,6 +467,10 @@ var Viewport = (function() {
 				const deltaS = pixi.ticker.deltaMS / 1000
 				animationTime += deltaS
 
+				if(PLAYER.turn >= turn && divs['chk-autorun'].prop('checked')) {
+					turn = PLAYER.turn + deltaS* TURNS_PER_SECOND
+				}
+
 				if(PLAYER.turn < turn) {
 					// Accept to increase turn
 					PLAYER.allowIncreaseTurnTo(Math.min(turn, PLAYER.turn + deltaS* TURNS_PER_SECOND))
@@ -446,15 +486,9 @@ var Viewport = (function() {
 
 			pixi.ticker.add(onTick)
 
-			const unlockBtnNextTurn = function() {
-				divs['btn-nextTurn'].prop('disabled', false)
-			}
 			divs['btn-nextTurn'].click(() => {
 				turn += 1
-				divs['btn-nextTurn'].prop('disabled', true)
-				setTimeout(unlockBtnNextTurn, 1000)
 			})
-
 
 			this.updateZoom = function(newZoom) {
 				// Where is the mouse in the game before zoom

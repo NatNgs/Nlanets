@@ -13,57 +13,116 @@ var PlayerHuman = (function () {
 			this.turn = 0
 			this.planets = {}
 			this.ships = {}
+			this.enemies = {}
 
-			console.log('PlayerHuman', this)
+			console.log('PlayerHuman', this.name, this.color)
+		}
+
+		updatePlanetData(updatedData, turn) {
+			const planetName = updatedData.name
+			if(!this.planets[planetName]) {
+				this.planets[planetName] = {}
+			}
+			const planetData = this.planets[planetName]
+
+			for(const property in updatedData) {
+				planetData[property] = updatedData[property]
+			}
+			for(const property in planetData) {
+				if(!(property in updatedData)) {
+					delete planetData[property]
+				}
+			}
+
+			planetData.updated = turn
+		}
+
+		updateShipData(updatedData, turn) {
+			const shipId = updatedData.id
+			if(!this.ships[shipId]) {
+				const firstKnownLocation = new Point(updatedData)
+				firstKnownLocation.turn = turn
+
+				this.ships[shipId] = {firstKnownLocation}
+			}
+			const shipData = this.ships[shipId]
+
+			for(const property in updatedData) {
+				shipData[property] = updatedData[property]
+			}
+			shipData.updated = turn
+
+			// Compute speed
+			if(shipData.turnDestination && shipData.destination) {
+				shipData.speed = new Point(
+					(shipData.destination.x - shipData.firstKnownLocation.x) / (shipData.turnDestination - shipData.firstKnownLocation.turn),
+					(shipData.destination.y - shipData.firstKnownLocation.y) / (shipData.turnDestination - shipData.firstKnownLocation.turn)
+				)
+			} else if(shipData.firstKnownLocation.turn < turn) {
+				shipData.speed = new Point(
+					(shipData.x - shipData.firstKnownLocation.x) / (turn - shipData.firstKnownLocation.turn),
+					(shipData.y - shipData.firstKnownLocation.y) / (turn - shipData.firstKnownLocation.turn)
+				)
+			}
+		}
+
+		updateUnseenShip(shipId) {
+			const ship = this.ships[shipId]
+
+			if(ship.destination) {
+				if(ship.turnDestination < this.turn) {
+					// Ship is unseen because it has arrived
+					delete this.ships[shipId]
+				} else {
+					// Update location
+					ship.x = ship.firstKnownLocation.x + ship.speed.x * (this.turn - ship.firstKnownLocation.turn)
+					ship.y = ship.firstKnownLocation.y + ship.speed.y * (this.turn - ship.firstKnownLocation.turn)
+				}
+			} else {
+				// We don't know where the ship is; it may already be arrived to an unknown destination
+				delete this.ships[shipId]
+			}
 		}
 
 		update(data) {
 			this.turn = data.turn
 
+			// Player update
+			for(const playerName in data.players) {
+				if(playerName === this.name) {
+					if(!this.hasLost && data.players[playerName].hasLost) {
+						this.hasLost = true
+						alert('You have lost!')
+					}
+				} else {
+					if(!(playerName in this.enemies)) {
+						this.enemies[playerName] = data.players[playerName]
+					}
+					if(!this.enemies[playerName].hasLost && data.players[playerName].hasLost) {
+						this.enemies[playerName].hasLost = true
+						alert(`${playerName} has been defeated!`)
+					}
+				}
+			}
+
+			// Planet update
 			for(const planetName in data.planets) {
-				if(!this.planets[planetName]) {
-					this.planets[planetName] = {}
-				}
-
-				for(const property in data.planets[planetName]) {
-					this.planets[planetName][property] = data.planets[planetName][property]
-				}
-				for(const property in this.planets[planetName]) {
-					if(!(property in data.planets[planetName])) {
-						delete this.planets[planetName][property]
-					}
-				}
-				this.planets[planetName].updated = data.turn
+				this.updatePlanetData(data.planets[planetName], data.turn)
 			}
+			for(const planetName in this.planets) {
+				this.planets[planetName].turn = data.turn
+			}
+
+			// New ships & Visible ship update
 			for(const shipId in data.ships) {
-				if(!this.ships[shipId]) {
-					this.ships[shipId] = {
-						firstKnownLocation: new Point(data.ships[shipId]),
-					}
-					this.ships[shipId].firstKnownLocation.turn = data.turn
-				}
-				const firstKnownLocation = this.ships[shipId].firstKnownLocation
-				for(const property in data.ships[shipId]) {
-					this.ships[shipId][property] = data.ships[shipId][property]
-				}
-				for(const property in this.ships[shipId]) {
-					if(!property in data.ships[shipId]) {
-						delete this.ships[shipId][property]
-					}
-				}
-				this.ships[shipId].firstKnownLocation = firstKnownLocation
-				this.ships[shipId].updated = data.turn
-
-				if(firstKnownLocation.turn < data.turn) {
-					// Compute next turn location
-					const speedX = (this.ships[shipId].x - firstKnownLocation.x) / (data.turn - firstKnownLocation.turn)
-					const speedY = (this.ships[shipId].y - firstKnownLocation.y) / (data.turn - firstKnownLocation.turn)
-					this.ships[shipId].nextTurnLocation = new Point(this.ships[shipId].x + speedX, this.ships[shipId].y + speedY)
-				}
+				this.updateShipData(data.ships[shipId], data.turn)
 			}
+
+			// Compute unseen ship updated
 			for(const shipId in this.ships) {
+				this.ships[shipId].turn = data.turn
 				if(!data.ships[shipId]) {
-					delete this.ships[shipId]
+					this.updateUnseenShip(shipId)
 				}
 			}
 		}
@@ -93,9 +152,9 @@ var PlayerHuman = (function () {
 			if(previouslySelectedPlanet === newSelectedPlanet) {
 				newSelectedPlanet.selected = false
 				this.selectedPlanet = null
-			} else if(previouslySelectedPlanet && previouslySelectedPlanet.population > 0 && previouslySelectedPlanet.owner.name === this.name) {
+			} else if(previouslySelectedPlanet && previouslySelectedPlanet.population > 1 && previouslySelectedPlanet.owner.name === this.name) {
 				// Send a ship from previously selected planet to this planet
-				const shipSize = (Math.random() * (previouslySelectedPlanet.population - 1) + 1) | 0
+				const shipSize = (previouslySelectedPlanet.population/2)|0
 				this.game.sendShip(previouslySelectedPlanet.name, newSelectedPlanet.name, shipSize)
 
 				newSelectedPlanet.selected = false

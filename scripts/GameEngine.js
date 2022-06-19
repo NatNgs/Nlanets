@@ -5,8 +5,10 @@ var GameEngine = (function() {
 	const MIN_PLANET_SIZE = .25
 	const MAX_PLANET_SIZE = .75
 	const MIN_DISTANCE_BETWEEN_PLANETS = 1.5
-	const PLANET_RADAR_RANGE = 1.5 // Distance around player's planet where all ship information are known
-	const SHIP_RADAR_RANGE = 1 // Distance around player's ship where all ship & planet information are known
+	const PLANET_RADAR_RANGE = 2 // Distance around player's planet where ship are visible (0=planet surface)
+	const PLANET_PRECISE_RADAR_RANGE = .75 // Distance around planet where all ship information are known (0=planet surface)
+	const SHIP_RADAR_RANGE = 1 // Distance around ship where others ship & planet are visible
+	const SHIP_PRECISE_RADAR_RANGE = 0.25 // Distance around ship where others ship full information are known
 
 	// // // GAME ENGINE // // //
 
@@ -179,23 +181,40 @@ var GameEngine = (function() {
 			return this.planets.filter(p => p.owner === player).length === 0 && this.ships.filter(s => s.owner === player).length === 0
 		}
 
+		playerInstantData() {
+			const playerData = {}
+			for(const player of this.players) {
+				playerData[player.name] = {
+					color: player.color,
+					hasLost: this.hasPlayerLost(player),
+				}
+			}
+			return playerData
+		}
+
 		updateSinglePlayer(player, arrivedShips=null) {
 			const instantData = {
 				turn: this.turn,
 				planets: {},
 				ships: {},
+				players: this.playerInstantData()
 			}
-
-			const hasLost = this.hasPlayerLost(player)
+			const hasLost = instantData.players[player.name].hasLost
 
 			const myArrivedShips = (arrivedShips || []).filter(s => s.owner === player)
-			const myPlanets = this.planets.filter(p => p.owner === player)
+			const myPlanets = []
 			const myFlyingShips = this.ships.filter(s => s.owner === player)
+
+			const shipRadars = {}
+			for(const ship of myFlyingShips) {
+				shipRadars[ship.id] = {planets: [], ships: []}
+			}
 
 			for(const planet of this.planets) {
 				let showFullData = hasLost || planet.owner === player
+
+				// Attack result
 				if(!showFullData) {
-					// Show full data if any ship as arrive to this planet
 					for(const ship of myArrivedShips) {
 						if(ship.planetDestination === planet) {
 							showFullData = true
@@ -203,39 +222,62 @@ var GameEngine = (function() {
 						}
 					}
 				}
+
+				// Ship Radar
 				if(!showFullData) {
 					for(const ship of myFlyingShips) {
-						// If planet center is in range of ship, show full data
-						if(ship.distanceTo(planet) <= SHIP_RADAR_RANGE) {
+						if(planet.distanceTo(ship, true) <= SHIP_RADAR_RANGE) {
 							showFullData = true
-							break
+							shipRadars[ship.id].planets.push(planet.name)
 						}
 					}
 				}
+
+				// Append information
 				instantData.planets[planet.name] = planet.getInstantData(showFullData)
+				if(planet.owner === player) {
+					instantData.planets[planet.name].radar = {ships: []}
+					myPlanets.push(planet)
+				}
 			}
+
 			for(const ship of this.ships) {
 				// Only update ship if owner is player OR if ship is near player's territory
 				let showFullShipData = hasLost || ship.owner === player
 				let showShipData = showFullShipData
-				if(!showShipData) {
+
+				if(!showFullShipData) {
+					// Planet Radar
 					for(const planet of myPlanets) {
-						if(planet.distanceTo(ship, true) <= PLANET_RADAR_RANGE) {
-							showShipData = true
-							break
-						}
-					}
-				}
-				if(!showShipData) {
-					for(const ship2 of myFlyingShips) {
-						if(ship.distanceTo(ship2, true) <= SHIP_RADAR_RANGE) {
+						const distance = planet.distanceTo(ship, true)
+						if(distance <= PLANET_PRECISE_RADAR_RANGE) {
 							showFullShipData = showShipData = true
-							break
+							instantData.planets[planet.name].radar.ships.push(ship.name)
+						} else if(distance <= PLANET_RADAR_RANGE) {
+							showShipData = true
+							instantData.planets[planet.name].radar.ships.push(ship.name)
+						}
+					}
+
+					// Ship Radar
+					for(const ship2 of myFlyingShips) {
+						const distance = ship.distanceTo(ship2, true)
+						if(distance <= SHIP_PRECISE_RADAR_RANGE) {
+							showFullShipData = showShipData = true
+							shipRadars[ship2.id].ships.push(ship.name)
+						} else if(distance <= SHIP_RADAR_RANGE) {
+							showShipData = true
+							shipRadars[ship2.id].ships.push(ship.name)
 						}
 					}
 				}
+
+				// Append information
 				if(showShipData) {
 					instantData.ships[ship.id] = ship.getInstantData(showFullShipData)
+					if(ship.id in shipRadars) {
+						instantData.ships[ship.id].radar = shipRadars[ship.id]
+					}
 				}
 			}
 			player.update(instantData)
@@ -290,7 +332,7 @@ var GameEngine = (function() {
 			this.color = color
 
 			this.population = 0
-			this._owner = null
+			this.owner = null
 		}
 
 		distanceTo(otherPlanet, isNotAPlanet=false) {
@@ -314,14 +356,6 @@ var GameEngine = (function() {
 			return instantData
 		}
 
-		set owner(newOwner) {
-			this._owner = newOwner
-			console.log("Planet " + this.name + " now owned by " + newOwner.name)
-		}
-		get owner() {
-			return this._owner
-		}
-
 		/**
 		 * @param {number} added Number of turns to consider to increase self population
 		 */
@@ -333,7 +367,7 @@ var GameEngine = (function() {
 
 
 	// // // SPACE SHIP // // //
-	let shipIds = {} // [origin][destination] = number
+	let shipIds = 0
 	class SpaceShip extends Point {
 
 		/**
@@ -347,11 +381,7 @@ var GameEngine = (function() {
 			super(planetOrigin.x, planetOrigin.y)
 
 			// Set ship id
-			const idListOrigin = shipIds[planetOrigin.name] || []
-			shipIds[planetOrigin.name] = idListOrigin
-			const tripId = (shipIds[planetOrigin.name][planetDestination.name] || 0) + 1
-			shipIds[planetOrigin.name][planetDestination.name] = tripId
-			this.id = planetOrigin.name + "-" + planetDestination.name + "-" + tripId
+			this.id = (shipIds++)
 
 			this.planetOrigin = planetOrigin
 			this.planetDestination = planetDestination
@@ -367,7 +397,7 @@ var GameEngine = (function() {
 			this.pointOrigin = new Point(this.planetOrigin.x + Math.cos(angle1) * this.planetOrigin.size, this.planetOrigin.y + Math.sin(angle1) * this.planetOrigin.size)
 
 			const angle2 = Math.atan2(this.planetOrigin.y - this.planetDestination.y, this.planetOrigin.x - this.planetDestination.x)
-				+ (Math.random() > 0.5 ? 1 : -1) * (Math.random() * (Math.PI/4) + Math.PI/4)
+				+ (Math.random() > 0.5 ? 1 : -1) * (Math.random() * (Math.PI/4))
 			this.pointDestination = new Point(this.planetDestination.x + Math.cos(angle2) * this.planetDestination.size, this.planetDestination.y + Math.sin(angle2) * this.planetDestination.size)
 
 			// Set to starting location
@@ -419,7 +449,6 @@ var GameEngine = (function() {
 			if(isFull) {
 				instantData.planetOrigin = this.planetOrigin.name
 				instantData.planetDestination = this.planetDestination.name
-				instantData.turnOrigin = this.turnOrigin
 				instantData.turnDestination = this.turnDestination
 				instantData.crewSize = this.crewSize
 				instantData.destination = new Point(this.pointDestination)

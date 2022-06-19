@@ -23,7 +23,7 @@ var PlayerAI = (function () {
 			this.planets = {}
 			this.ships = {}
 
-			console.log('PlayerAI', this)
+			console.log('PlayerAI', this.name, this.color)
 		}
 
 		update(data) {
@@ -53,7 +53,7 @@ var PlayerAI = (function () {
 					notMyPlanets.push(p)
 				}
 			}
-			myPlanets.sort((a, b)=>a.population - b.population)
+			myPlanets.sort((a, b)=>b.population - a.population)
 
 			if(myPlanets.length <= 0 || notMyPlanets.length <= 0 || myPlanets[0].population < this.actData.lastSentShipSize) {
 				this.game.advanceToTurn(this.turn + 1)
@@ -65,10 +65,8 @@ var PlayerAI = (function () {
 			const myBestPlanet = myPlanets[0]
 			const target = notMyPlanets[Math.floor(Math.random()*notMyPlanets.length)]
 			const shipSize = (Math.random()*(myBestPlanet.population - this.actData.lastSentShipSize - 1) + this.actData.lastSentShipSize + 1)|0
-			const turnOrigin = this.turn + Math.random() // Random delay between 0 & 1turn
-			const turnDestination = turnOrigin + this.game.getPlanetDistance(myBestPlanet.name, target.name) * (1+Math.random()) // Speed random from normal to half
 
-			this.game.sendShip(myBestPlanet.name, target.name, shipSize, turnOrigin, turnDestination)
+			this.game.sendShip(myBestPlanet.name, target.name, shipSize)
 			this.actData.lastSentShipSize = shipSize
 
 			this.game.advanceToTurn(this.turn + 1)
