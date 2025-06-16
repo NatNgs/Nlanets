@@ -26,29 +26,29 @@ var Viewport = (function() {
 	const PLANET_RADAR_RADIUS = 1.5
 	const SHIP_RADAR_RADIUS = 1
 	const PLANET_NAME_FONT_SIZE = 22
-	const QUALITY_UPGRADE = 16 // Increase this value to improve graphics accuracy; but also increases graphics computation time (lag)
+	const MAX_ZOOM = 16 // Increase this value to improve graphics accuracy; but also increases graphics computation time (lag)
 
 	class RadarRenderer extends PIXI.Graphics {
 		constructor(radarData) {
 			super()
 			this.randomShift = Math.random()
 			this.radarData = radarData
-			const scale = (radarData.scale||1)/QUALITY_UPGRADE
+			const scale = (radarData.scale||1)/MAX_ZOOM
 			this.scale = new PIXI.Point(scale, scale)
 
 			this.cullable = true
 			this.cullArea = new PIXI.Rectangle(
-				-this.radarData.maxRange * QUALITY_UPGRADE,
-				-this.radarData.maxRange * QUALITY_UPGRADE,
-				2*this.radarData.maxRange* QUALITY_UPGRADE,
-				2*this.radarData.maxRange* QUALITY_UPGRADE
+				-this.radarData.maxRange * MAX_ZOOM,
+				-this.radarData.maxRange * MAX_ZOOM,
+				2*this.radarData.maxRange* MAX_ZOOM,
+				2*this.radarData.maxRange* MAX_ZOOM
 			)
 		}
 
 		update(context, animationTime) {
 			this.clear()
 
-			const onePx = context.onePixel * QUALITY_UPGRADE
+			const onePx = context.onePixel * MAX_ZOOM
 			//const color = hsl2rgb(this.rendererPlayer.color, 1, .7)
 			const baseProgress = (animationTime % this.radarData.frequency)/this.radarData.frequency + this.randomShift
 
@@ -57,7 +57,7 @@ var Viewport = (function() {
 
 				// Growing circle
 				this.lineStyle(onePx, this.radarData.color, 1-progress)
-				this.drawCircle(0, 0, QUALITY_UPGRADE * (this.radarData.minRange + (Math.pow(progress, 1/4) * (this.radarData.maxRange - this.radarData.minRange))))
+				this.drawCircle(0, 0, MAX_ZOOM * (this.radarData.minRange + (Math.pow(progress, 1/4) * (this.radarData.maxRange - this.radarData.minRange))))
 			}
 		}
 	}
@@ -76,7 +76,7 @@ var Viewport = (function() {
 			// Prepare graphics
 			this.x = planetData.x
 			this.y = planetData.y
-			this.scale = new PIXI.Point(1/QUALITY_UPGRADE, 1/QUALITY_UPGRADE)
+			this.scale = new PIXI.Point(1/MAX_ZOOM, 1/MAX_ZOOM)
 			this.interactive = true
 			this.buttonMode = true
 
@@ -87,7 +87,7 @@ var Viewport = (function() {
 			// Planet
 			this.planet = new PIXI.Graphics()
 			this.planet.beginFill(hsl2rgb(planetData.color, .5, .4))
-			this.planet.drawCircle(0, 0, planetData.size * QUALITY_UPGRADE)
+			this.planet.drawCircle(0, 0, planetData.size * MAX_ZOOM)
 			this.planet.endFill()
 
 			// Radar
@@ -96,7 +96,7 @@ var Viewport = (function() {
 				frequency: 8+Math.random()*.5,
 				minRange: this.data.size,
 				maxRange: this.data.size + PLANET_RADAR_RADIUS,
-				scale: QUALITY_UPGRADE,
+				scale: MAX_ZOOM,
 				color: hsl2rgb(planetData.color, 1, .7)
 			})
 			this.radar.visible = false
@@ -105,7 +105,7 @@ var Viewport = (function() {
 			this.nameBox = new PIXI.Graphics()
 			this.nameText = new PIXI.Text(planetData.name, {
 				fontFamily: 'Arial',
-				fontSize: PLANET_NAME_FONT_SIZE * QUALITY_UPGRADE,
+				fontSize: PLANET_NAME_FONT_SIZE * MAX_ZOOM,
 				align: 'left',
 				fill: '0xFFFFFF',
 				color: hsl2rgb(rendererPlayer.color, 1, .7),
@@ -115,17 +115,17 @@ var Viewport = (function() {
 			this.nameText.x = -this.nameText.width / 2
 			this.nameText.y = -this.nameText.height / 2
 			if(this.nameText.width > this.nameText.height) {
-				this.nameBox.height = planetData.size * QUALITY_UPGRADE
+				this.nameBox.height = planetData.size * MAX_ZOOM
 				this.nameBox.width = this.nameText.width * this.nameBox.height/this.nameText.height
 			} else {
-				this.nameBox.width = planetData.size * QUALITY_UPGRADE
+				this.nameBox.width = planetData.size * MAX_ZOOM
 				this.nameBox.height = this.nameText.height * this.nameBox.width/this.nameText.width
 			}
 
 			// Planet Population
 			this.populationBox = new PIXI.Graphics()
-			this.populationBox.x = planetData.size*Math.SQRT1_2 * QUALITY_UPGRADE
-			this.populationBox.y = planetData.size*Math.SQRT1_2 * QUALITY_UPGRADE
+			this.populationBox.x = planetData.size*Math.SQRT1_2 * MAX_ZOOM
+			this.populationBox.y = planetData.size*Math.SQRT1_2 * MAX_ZOOM
 			this.populationBox.nlanetsData = {population: false}
 
 			// Add layers
@@ -171,7 +171,7 @@ var Viewport = (function() {
 
 				this.highlight.clear()
 				this.highlight.beginFill(fillColor)
-				this.highlight.drawCircle(0, 0, (this.data.size + BORDER_SIZE) * QUALITY_UPGRADE)
+				this.highlight.drawCircle(0, 0, (this.data.size + BORDER_SIZE) * MAX_ZOOM)
 				this.highlight.endFill()
 			}
 			const since = this.data.turn - this.highlight.nlanetsData.updatedOwner
@@ -194,7 +194,7 @@ var Viewport = (function() {
 
 					this.populationText = new PIXI.Text(this.data.population, {
 						fontFamily: 'Arial',
-						fontSize: PLANET_NAME_FONT_SIZE * QUALITY_UPGRADE,
+						fontSize: PLANET_NAME_FONT_SIZE * MAX_ZOOM,
 						align: 'left',
 						fill: '0xFFFFFF',
 					})
@@ -207,7 +207,7 @@ var Viewport = (function() {
 				this.populationBox.nlanetsData.updated = this.data.turn
 			}
 			if(this.populationText) {
-				this.populationBox.height = PLANET_NAME_FONT_SIZE*context.onePixel * QUALITY_UPGRADE
+				this.populationBox.height = PLANET_NAME_FONT_SIZE*context.onePixel * MAX_ZOOM
 				this.populationBox.width = this.populationText.width * this.populationBox.height/this.populationText.height
 				const since = this.data.turn - this.populationBox.nlanetsData.updated
 				this.populationBox.alpha = 1 / (since + 1)
@@ -415,6 +415,7 @@ var Viewport = (function() {
 
 			const HTML = divs.viewport
 			const pixi = new PIXI.Application({ resizeTo: window, antialias: true, autoDensity: true })
+			PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.LINEAR;
 			HTML.append(pixi.view)
 			this._div = HTML
 
@@ -506,6 +507,10 @@ var Viewport = (function() {
 				const minZoom = Math.log2(Math.min(ratioX, ratioY) * .9) // Tolerate 5% margin on every side
 				if(this.viewLocation.zoom < minZoom) {
 					this.viewLocation.zoom = minZoom
+				}
+
+				if(this.viewLocation.zoom > MAX_ZOOM/2) {
+					this.viewLocation.zoom = MAX_ZOOM/2
 				}
 
 				// Apply zoom & viewport move, to the matrix only
