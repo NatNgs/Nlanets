@@ -1,5 +1,5 @@
-var PlayerAI = (function () {
-	class PlayerAI extends AbstractPlayer {
+var RandomAI = (function () {
+	class RandomAI extends AbstractPlayer {
 		/* Extended properties, see AbstractPlayer
 		 * this.name
 		 * this.color
@@ -13,7 +13,7 @@ var PlayerAI = (function () {
 		 * @param {GameEngine} game The game this player is playing
 		 */
 		constructor(name, color, game) {
-			super(name, color, game)
+			super('RandomAI ' + name, color, game)
 
 			// Prepare for acting
 			this.actData = {
@@ -23,7 +23,7 @@ var PlayerAI = (function () {
 			this.planets = {}
 			this.ships = {}
 
-			console.log('PlayerAI', this.name, this.color)
+			console.log(this.name, this.color)
 		}
 
 		update(data) {
@@ -73,5 +73,5 @@ var PlayerAI = (function () {
 		}
 	}
 
-	return PlayerAI
+	return RandomAI
 })()

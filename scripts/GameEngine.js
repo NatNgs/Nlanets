@@ -5,10 +5,10 @@ var GameEngine = (function() {
 	const MIN_PLANET_SIZE = .25
 	const MAX_PLANET_SIZE = .75
 	const MIN_DISTANCE_BETWEEN_PLANETS = 1.5
-	const PLANET_RADAR_RANGE = 2 // Distance around player's planet where ship are visible (0=planet surface)
-	const PLANET_PRECISE_RADAR_RANGE = .75 // Distance around planet where all ship information are known (0=planet surface)
+	const PLANET_RADAR_RANGE = 3 // Distance around player's planet where ship are visible (0=planet surface)
+	const PLANET_PRECISE_RADAR_RANGE = 1.5 // Distance around planet where all ship information are known (0=planet surface)
 	const SHIP_RADAR_RANGE = 1 // Distance around ship where others ship & planet are visible
-	const SHIP_PRECISE_RADAR_RANGE = 0.25 // Distance around ship where others ship full information are known
+	const SHIP_PRECISE_RADAR_RANGE = 0.5 // Distance around ship where others ship full information are known
 
 	// // // GAME ENGINE // // //
 
@@ -94,6 +94,7 @@ var GameEngine = (function() {
 					} else if(!destination) {
 						throw new Error("Invalid planet name: " + destinationName)
 					} else if(origin.owner !== player) {
+						console.error(origin, player)
 						throw new Error("Player " + player.name + " does not own origin planet: " + origin.name)
 					}
 
@@ -137,10 +138,11 @@ var GameEngine = (function() {
 			}
 
 			// Give every player one planet to start
-			const unownedPlanets = this.rng.shuffle(this.planets.copy())
+			const unownedPlanets = this.rng.shuffle(this.planets.map((_,i)=>i))
 			for(let player of this.players) {
-				let planet = unownedPlanets.shift()
+				let planet = this.planets[unownedPlanets.shift()]
 				planet.owner = player
+				console.debug('Planet', planet.name, 'is given to', player.name)
 			}
 
 			this.update(0, 0)
@@ -252,9 +254,11 @@ var GameEngine = (function() {
 						const distance = planet.distanceTo(ship, true)
 						if(distance <= PLANET_PRECISE_RADAR_RANGE) {
 							showFullShipData = showShipData = true
+							if(!instantData.planets[planet.name].radar) instantData.planets[planet.name].radar = {ships: []}
 							instantData.planets[planet.name].radar.ships.push(ship.name)
 						} else if(distance <= PLANET_RADAR_RANGE) {
 							showShipData = true
+							if(!instantData.planets[planet.name].radar) instantData.planets[planet.name].radar = {ships: []}
 							instantData.planets[planet.name].radar.ships.push(ship.name)
 						}
 					}
@@ -280,13 +284,13 @@ var GameEngine = (function() {
 					}
 				}
 			}
-			player.update(instantData)
+			setTimeout(player.update(instantData))
 		}
 
 		/**
 		 * @param {number} added By how much turn has increased since last call (can be float)
 		 */
-		update(newTurn, added) {
+		async update(newTurn, added) {
 			// Update turn number
 			this.turn = newTurn
 
@@ -351,6 +355,7 @@ var GameEngine = (function() {
 			if(isFull) {
 				instantData.population = this.population|0
 				instantData.owner = this.owner?this.owner.instantData:null
+				if(this.owner && !instantData.owner) console.error('planet.getInstantData:', this, instantData)
 			}
 
 			return instantData
@@ -431,6 +436,7 @@ var GameEngine = (function() {
 				// Successful attack
 				this.planetDestination.owner = this.owner
 				this.planetDestination.population = (this.crewSize- this.planetDestination.population)
+				console.debug('Planet', this.planetDestination.name, 'has been conqueered by', this.owner.name)
 			} else {
 				// Unsuccessful attack
 				this.planetDestination.population -= this.crewSize
@@ -462,7 +468,7 @@ var GameEngine = (function() {
 
 	// // // FUNCTIONS // // //
 
-	const NAME_LETTERS = "ΓΔΘΛΞΠΣΦΨΩABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	const NAME_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZΓΔΘΛΞΠΣΦΨΩ0123456789"
 	function generatePlanetName(values) {
 		let gen = NAME_LETTERS[(values.shift()*NAME_LETTERS.length-.5)|0].toUpperCase()
 		for(const v of values) {

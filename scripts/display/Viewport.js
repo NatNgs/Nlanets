@@ -17,13 +17,19 @@ function hsl2rgb(h, s, l) {
 	return (f(0) << 16) | (f(8) << 8) | (f(4))
 }
 
+function formatTurnAsYear(turnNum) {
+	const rTurn = turnNum | 0
+	const curr = new Date(new Date().setFullYear(new Date().getFullYear()+33+rTurn) + (turnNum-rTurn)*365*24*60*60*1000)
+	return curr.toISOString().slice(0, 10)
+}
+
 
 var Viewport = (function() {
 	const ZOOM_SPEED = 16
 	const MAP_MOVE_SENSITIVITY = 1
-	const TURNS_PER_SECOND = 1
+	const TURNS_PER_SECOND = 0.5
 	const BORDER_SIZE = 0.5 // Circle of selection around planets, in game units
-	const PLANET_RADAR_RADIUS = 1.5
+	const PLANET_RADAR_RADIUS = 2
 	const SHIP_RADAR_RADIUS = 1
 	const PLANET_NAME_FONT_SIZE = 22
 	const MAX_ZOOM = 16 // Increase this value to improve graphics accuracy; but also increases graphics computation time (lag)
@@ -246,6 +252,10 @@ var Viewport = (function() {
 				this.radar.visible = false
 				this.addChild(this.radar)
 			}
+
+			this.populationBox = new PIXI.Graphics()
+			this.populationBox.alpha = 0.7
+			this.addChild(this.populationBox) // Foreground
 		}
 
 		update(context, animationTime) {
@@ -311,6 +321,25 @@ var Viewport = (function() {
 			this.subGraphics.lineTo(this.data.x +crossSize, this.data.y)
 			this.subGraphics.moveTo(this.data.x, this.data.y -crossSize)
 			this.subGraphics.lineTo(this.data.x, this.data.y +crossSize)
+
+			// If ship crew is known, display it next to it (bottom left)
+			if(this.populationText) {
+				this.populationText.destroy()
+				this.populationBox.removeChildren()
+			}
+			if(this.data.crewSize) {
+				this.populationText = new PIXI.Text(this.data.crewSize, {
+					fontFamily: 'Arial',
+					fontSize: 24,
+					align: 'left',
+					fill: '0xFFFFFF',
+				})
+				this.populationBox.addChild(this.populationText)
+				this.populationBox.height = context.onePixel * MAX_ZOOM
+				this.populationBox.width = this.populationText.width * this.populationBox.height/this.populationText.height
+				this.populationBox.x = this.data.x
+				this.populationBox.y = this.data.y
+			}
 
 			// Radar
 			if(this.radar) {
@@ -476,7 +505,7 @@ var Viewport = (function() {
 					// Accept to increase turn
 					PLAYER.allowIncreaseTurnTo(Math.min(turn, PLAYER.turn + deltaS* TURNS_PER_SECOND))
 				}
-				divs['label-turn'].text(PLAYER.turn.toFixed(2))
+				divs['label-turn'].text(formatTurnAsYear(PLAYER.turn))
 
 				// Redraw all (TODO later: instead of redrawing everything, add every sub elements as graphics.addChild(subElement), and let pixiJS to the job)
 				graphics.clear()
@@ -487,9 +516,8 @@ var Viewport = (function() {
 
 			pixi.ticker.add(onTick)
 
-			divs['btn-nextTurn'].click(() => {
-				turn += 1
-			})
+			divs['btn-nextMonth'].click(() =>turn += 1/12)
+			divs['btn-nextYear'].click(() =>turn += 1)
 
 			this.updateZoom = function(newZoom) {
 				// Where is the mouse in the game before zoom

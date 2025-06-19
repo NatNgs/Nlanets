@@ -22,6 +22,7 @@ class AbstractPlayer {
 
 		// Register player to the game
 		this.game = game.registerPlayer(this)
+		console.debug('Registered player', name)
 	}
 
 	/**

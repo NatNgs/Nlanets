@@ -19,10 +19,11 @@
 	<script src="scripts/GameEngine.js"></script>
 
 	<script src="scripts/players/AbstractPlayer.js"></script>
-	<script src="scripts/players/PlayerAI.js"></script>
 	<script src="scripts/display/CullableRenderer.js"></script>
 	<script src="scripts/display/Viewport.js"></script>
 	<script src="scripts/players/PlayerHuman.js"></script>
+	<script src="scripts/players/RandomAI.js"></script>
+	<script src="scripts/players/SimpleAI.js"></script>
 
 	<!-- CSS -->
 	<link rel="stylesheet" href="styles/main.css">
@@ -30,44 +31,69 @@
 	<script>
 		var DEBUG = null
 
-		// On body load
-		$(document).ready(function() {
-			// Setup Game Engine
-			const GAME_ENGINE = new GameEngine(25, 25, 25)
+		function _onStart() {
+			// Extract parameters from input fields
+			const width = +$('#inp-width').val()
+			const height = +$('#inp-height').val()
+			const planetsCount = +$('#inp-planetsCount').val()
+			const seed = $('#inp-seed').val()
 
-			// Setup AI player
-			const pNumb = 6
-			const AI1 = new PlayerAI('AI1', 0, GAME_ENGINE)
-			for(let i=2;i<pNumb; i++) {
-				new PlayerAI('AI' + i, i*360/(pNumb+1), GAME_ENGINE)
-			}
+			// Setup Game Engine
+			const GAME_ENGINE = new GameEngine(width, height, planetsCount, seed)
+
+			const PLAYERS = []
 
 			// Setup Player
-			const PLAYER = new PlayerHuman('Human', pNumb*360/(pNumb+1), GAME_ENGINE)
+			const PLAYER = new PlayerHuman('Human', 0, GAME_ENGINE)
+			PLAYERS.push(PLAYER)
+
+			// Setup AI player
+			const pNumb = +$('#inp-npc').val()
+			const ais = [RandomAI,SimpleAI]
+			for(let i=1;i<=pNumb; i++) {
+				PLAYERS.push(new (ais[i%ais.length])(i, i*360/(pNumb+1), GAME_ENGINE))
+			}
+
 
 			// Prepare Player Viewport
-			const elementsList = ['viewport', 'btn-nextTurn', 'label-turn', 'chk-autorun']
+			const elementsList = ['viewport', 'btn-nextMonth', 'btn-nextYear', 'label-turn', 'chk-autorun']
 			const htmlViewportElements = {}
 			for(const id of elementsList) {
 				htmlViewportElements[id] = $('[id="' + id  +'"]')
 			}
-			const V = new Viewport(htmlViewportElements, PLAYER)
+			const VIEWPORT = new Viewport(htmlViewportElements, PLAYER)
+
+			// Hide menu & show game panel
+			$('#menu').hide()
+			$('#toolbar').show()
+			$('#viewport').show()
+
+			// Add debug tools
+			DEBUG = {GAME_ENGINE, PLAYERS, VIEWPORT}
 
 			// Start the game
 			GAME_ENGINE.start()
-
-
-			// Add debug tools
-			DEBUG = {GAME_ENGINE, PLAYER, AI1}
-		})
+		}
 	</script>
 </head>
 <body>
-	<div id="toolbar">
-		<span id="label-turn"></span>
-		<button id="btn-nextTurn">Next Turn</button>
-		<input type="checkbox" id="chk-autorun">Autorun</button>
+	<div id="menu">
+		<!-- width, height, planetsCount, seed -->
+		<label for="inp-width">Width:</label><input type="number" id="inp-width" value="25" min="10" max="99"/>
+		<label for="inp-height">Height:</label><input type="number" id="inp-height" value="25" min="10" max="99"/>
+		<label for="inp-planetsCount">Planets:</label><input type="number" id="inp-planetsCount" value="25" min="10" max="99"/>
+		<label for="inp-npc">NPC Players:</label><input type="number" id="inp-npc" value="6" min="1" max="15"/>
+		<label for="inp-seed">Seed:</label><input type="text" id="inp-seed" value="" placeholder="random"/>
+		<button id="btn-start" onclick="_onStart()">Start</button>
 	</div>
-	<div id="viewport"></div>
+
+	<div id="toolbar" hidden>
+		<span>Date: <span id="label-turn"></span></span>
+		<button id="btn-nextMonth">Next Month</button>
+		<button id="btn-nextYear">Next Year</button>
+		<input type="checkbox" id="chk-autorun"/><label for="chk-autorun">Autorun</label>
+
+	</div>
+	<div id="viewport" hidden></div>
 </body>
 </html>

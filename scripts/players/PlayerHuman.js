@@ -104,6 +104,11 @@ var PlayerHuman = (function () {
 					}
 				}
 			}
+			// if all enemies have lost
+			if(!this.hasLost && !this.haveWon && Object.values(this.enemies).every(e => e.hasLost)) {
+				alert('You win!')
+				this.haveWon = true
+			}
 
 			// Planet update
 			for(const planetName in data.planets) {
