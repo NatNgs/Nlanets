@@ -199,7 +199,7 @@ var GameEngine = (function() {
 				turn: this.turn,
 				planets: {},
 				ships: {},
-				players: this.playerInstantData()
+				players: this.playerInstantData(),
 			}
 			const hasLost = instantData.players[player.name].hasLost
 
@@ -267,7 +267,7 @@ var GameEngine = (function() {
 					for(const ship2 of myFlyingShips) {
 						const distance = ship.distanceTo(ship2, true)
 						if(distance <= SHIP_PRECISE_RADAR_RANGE) {
-							showFullShipData = showShipData = true
+							showFullShipData = (showShipData = true)
 							shipRadars[ship2.id].ships.push(ship.name)
 						} else if(distance <= SHIP_RADAR_RANGE) {
 							showShipData = true
@@ -284,7 +284,7 @@ var GameEngine = (function() {
 					}
 				}
 			}
-			setTimeout(player.update(instantData))
+			setTimeout(()=>player.update(instantData))
 		}
 
 		/**

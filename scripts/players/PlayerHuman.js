@@ -28,13 +28,10 @@ var PlayerHuman = (function () {
 			for(const property in updatedData) {
 				planetData[property] = updatedData[property]
 			}
-			for(const property in planetData) {
-				if(!(property in updatedData)) {
-					delete planetData[property]
-				}
-			}
 
-			planetData.updated = turn
+			if(updatedData.population) {
+				planetData.updated = turn
+			}
 		}
 
 		updateShipData(updatedData, turn) {
@@ -84,7 +81,7 @@ var PlayerHuman = (function () {
 			}
 		}
 
-		update(data) {
+		async update(data) {
 			this.turn = data.turn
 
 			// Player update
@@ -144,6 +141,7 @@ var PlayerHuman = (function () {
 			if(!newSelectedPlanet) {
 				throw new Error(`Planet ${planetName} not found`)
 			}
+			console.debug('PlayerHuman onClick on', planetName)
 
 			const previouslySelectedPlanet = this.selectedPlanet
 			if(previouslySelectedPlanet) {
@@ -160,7 +158,7 @@ var PlayerHuman = (function () {
 			} else if(previouslySelectedPlanet && previouslySelectedPlanet.population > 1 && previouslySelectedPlanet.owner.name === this.name) {
 				// Send a ship from previously selected planet to this planet
 				const shipSize = (previouslySelectedPlanet.population/2)|0
-				this.game.sendShip(previouslySelectedPlanet.name, newSelectedPlanet.name, shipSize)
+				setTimeout(()=>this.game.sendShip(previouslySelectedPlanet.name, newSelectedPlanet.name, shipSize))
 
 				newSelectedPlanet.selected = false
 				this.selectedPlanet = null
@@ -170,7 +168,8 @@ var PlayerHuman = (function () {
 		/**
 		 * @param {Point} clickLocation
 		 */
-		onClick(clickLocation) {
+		async onClick(clickLocation) {
+			console.debug('PlayerHuman onClick on empty space')
 			const previouslySelectedPlanet = this.selectedPlanet
 			if (previouslySelectedPlanet) {
 				previouslySelectedPlanet.selected = false
@@ -178,7 +177,7 @@ var PlayerHuman = (function () {
 			}
 		}
 
-		allowIncreaseTurnTo(turn) {
+		async allowIncreaseTurnTo(turn) {
 			this.game.advanceToTurn(turn)
 		}
 	}

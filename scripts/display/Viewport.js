@@ -51,7 +51,7 @@ var Viewport = (function() {
 			)
 		}
 
-		update(context, animationTime) {
+		async update(context, animationTime) {
 			this.clear()
 
 			const onePx = context.onePixel * MAX_ZOOM
@@ -88,7 +88,7 @@ var Viewport = (function() {
 
 			// Planet highlight (Dynamically drawn, see method 'update')
 			this.highlight = new PIXI.Graphics()
-			this.highlight.nlanetsData = {owner: false, selected: false}
+			this.highlight.nlanetsData = {owner: false, selected: this.data.selected}
 
 			// Planet
 			this.planet = new PIXI.Graphics()
@@ -148,7 +148,7 @@ var Viewport = (function() {
 			this.cullArea = this.radar.cullArea
 		}
 
-		update(context, animationTime) {
+		async update(context, animationTime) {
 			if(!this.displayed) return // Culling: Element is not visible
 
 			// Planet highlight (owner)
@@ -168,9 +168,8 @@ var Viewport = (function() {
 				this.highlight.nlanetsData.owner = null
 			}
 
-			if(ownerChanged || this.highlight.nlanetsData.selected !== this.data.selected) {
+			if(ownerChanged) {
 				const owner = this.highlight.nlanetsData.owner
-				const selected = (this.highlight.nlanetsData.selected = this.data.selected)
 				const fillColor = (owner)
 					? hsl2rgb(owner.color, 1, .5) // colorful
 					: hsl2rgb(0, 0, .5) // white
@@ -180,8 +179,8 @@ var Viewport = (function() {
 				this.highlight.drawCircle(0, 0, (this.data.size + BORDER_SIZE) * MAX_ZOOM)
 				this.highlight.endFill()
 			}
-			const since = this.data.turn - this.highlight.nlanetsData.updatedOwner
-			this.highlight.alpha = this.highlight.nlanetsData.selected ? .75 : (this.highlight.nlanetsData.owner ? 1 / (since + 3) : 0)
+			const since = this.data.turn - this.data.updated
+			this.highlight.alpha = this.data.selected ? .75 : (this.highlight.nlanetsData.owner ? 1 / Math.sqrt(since + 9) : 0)
 
 			// Radar
 			this.radar.visible = this.data.radar && this.data.radar.ships.length > 0
@@ -223,7 +222,7 @@ var Viewport = (function() {
 		/**
 		 * @param {PIXI.FederatedPointerEvent} event
 		 */
-		onClick(event) {
+		async onClick(event) {
 			this.rendererPlayer.onPlanetClick(this.data.name)
 		}
 	}
@@ -258,7 +257,7 @@ var Viewport = (function() {
 			this.addChild(this.populationBox) // Foreground
 		}
 
-		update(context, animationTime) {
+		async update(context, animationTime) {
 			this.subGraphics.clear()
 
 			const crossSize = 6 * context.onePixel
@@ -376,7 +375,7 @@ var Viewport = (function() {
 			this.on('pointertap', this.onClick)
 		}
 
-		update(context, animationTime) {
+		async update(context, animationTime) {
 			// Add missing planets
 			for (const planetName in this.player.planets) {
 				if(!this.planetRenderers[planetName]) {
@@ -493,7 +492,7 @@ var Viewport = (function() {
 				e.preventDefault()
 			})
 
-			const onTick = function() {
+			const onTick = async function() {
 				const deltaS = pixi.ticker.deltaMS / 1000
 				animationTime += deltaS
 
@@ -519,7 +518,7 @@ var Viewport = (function() {
 			divs['btn-nextMonth'].click(() =>turn += 1/12)
 			divs['btn-nextYear'].click(() =>turn += 1)
 
-			this.updateZoom = function(newZoom) {
+			this.updateZoom = async function(newZoom) {
 				// Where is the mouse in the game before zoom
 				const mouseLocationGameBefore = mouseLocationGame
 				const mouseLocationViewport = this.gameToViewportMatrix.apply(mouseLocationGame)
@@ -557,7 +556,7 @@ var Viewport = (function() {
 
 			this.updateZoom(-99)
 		}
-		updateView(applyUpdate = true) {
+		async updateView(applyUpdate = true) {
 			// Initiate the matrix
 			this.gameToViewportMatrix.identity()
 
