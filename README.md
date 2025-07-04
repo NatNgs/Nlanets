@@ -6,6 +6,14 @@
 
 Instead of default game ready to play, add a menu to configure all settings
 
+### Looping map
+
+No top/bottom or left/right of the map: Map loops such as left = right and top = bottom
+
+(and ship will from la planet of the left to a planet of the right by going left toward where the map loops)
+
+only display planets once in viewport (depending on where viewport is centered, display the nearest location of every planet to the viewport center)
+
 ## TODO
 
 ### End of game screen
@@ -57,11 +65,3 @@ Still display current location of self ships (but we will receive their radar & 
 Currently, when we find an enemy ship (for example by self ship passing by it), if the enemy ship goes out of radar, it simply disapear.
 
 Show them as grayed out for a single turn, at the exact last location it was last seen, maybe with a '?' mark near its arrow to indicate we have lost it.
-
-### Looping map
-
-No top/bottom or left/right of the map: Map loops such as left = right and top = bottom
-
-(and ship will from la planet of the left to a planet of the right by going left toward where the map loops)
-
-only display planets once in viewport (depending on where viewport is centered, display the nearest location of every planet to the viewport center)

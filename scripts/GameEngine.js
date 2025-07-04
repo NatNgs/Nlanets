@@ -12,6 +12,102 @@ var GameEngine = (function() {
 
 	// // // GAME ENGINE // // //
 
+	class PlayerConnector {
+		// private fields
+		#engine
+		#player
+		#requestedAdvanceTurn
+
+		constructor(engine, player) {
+			this.#engine = engine
+			this.#player = player
+			this.#requestedAdvanceTurn = -1
+		}
+
+		// getters
+		get width() {
+			return this.#engine.width
+		}
+		get height() {
+			return this.#engine.height
+		}
+		get currentTurn() {
+			return this.#engine.turn
+		}
+		get requestedAdvanceTurn() {
+			return this.#requestedAdvanceTurn
+		}
+		get instantData() {
+			return {
+				name: this.#player.name,
+				color: this.#player.color,
+			}
+		}
+		get name() {
+			return this.#player.name
+		}
+
+		// PLAYER => ENGINE
+		getPlanetDistance(originName, destinationName) {
+			const origin = this.#engine.planets.find(p => p.name === originName)
+			const destination = this.#engine.planets.find(p => p.name === destinationName)
+			if(!origin) {
+				throw new Error("Invalid planet name: " + originName)
+			} else if(!destination) {
+				throw new Error("Invalid planet name: " + destinationName)
+			}
+			return this.#engine.getSphericalDistance(origin, destination)
+		}
+
+		sendShip(originName, destinationName, crewSize, turnOrigin=-1, turnDestination=-1) {
+			if(originName === destinationName) {
+				throw new Error("Origin and destination are the same planet: " + originName)
+			} else if(turnOrigin >= 0 && turnOrigin < this.currentTurn) {
+				throw new Error("Cannot send ship in the past: " + turnOrigin + " < " + this.currentTurn + "(current turn)")
+			}
+
+			const origin = this.#engine.planets.find(p => p.name === originName)
+			const destination = this.#engine.planets.find(p => p.name === destinationName)
+
+			if(!origin) {
+				throw new Error("Invalid planet name: " + originName)
+			} else if(!destination) {
+				throw new Error("Invalid planet name: " + destinationName)
+			} else if(origin.owner !== this) {
+				console.error(origin, this)
+				throw new Error("Player " + this.#player.name + " does not own origin planet: " + origin.name)
+			}
+
+			crewSize |= 0 // No floating value
+			if(crewSize < 1) {
+				throw new Error("Can't send an empty ship")
+			} else if(crewSize > origin.population) {
+				throw new Error("Not enough population in origin planet: " + origin.name + " (requested " + crewSize + "/" + (origin.population|0) + " inhabitants)")
+			}
+
+			const distance = this.#engine.getSphericalDistance(origin, destination)
+			if(turnDestination >= 0 && turnOrigin + distance > turnDestination) {
+				throw new Error("Distance is too long, ship cannot arrive in requested time: " + turnOrigin + "(departure) + " + distance + "(fastest travel time) = " + (turnOrigin + distance) + " > " + turnDestination + "(arrival)")
+			} else if(turnDestination < this.currentTurn + distance) {
+				turnDestination = this.currentTurn + distance
+			}
+
+			origin.population -= crewSize
+
+			this.#engine.createSpaceShip(origin, destination, this.currentTurn, turnDestination, crewSize)
+		}
+
+		advanceToTurn(turn) {
+			this.#requestedAdvanceTurn = turn
+			this.#engine.advanceTurn()
+		}
+
+		// ENGINE => PLAYER
+		sendUpdateToPlayer(instantData) {
+			this.#player.onReceiveGameUpdate(JSON.parse(JSON.stringify(instantData)))
+		}
+	}
+
 	class GameEngine {
 
 		constructor(width, height, planetsCount, seed) {
@@ -32,9 +128,9 @@ var GameEngine = (function() {
 		generatePlanets(planetsCount) {
 			let retries = MAX_GENERATE_PLANETS_TRIES
 			while(this.planets.length < planetsCount && retries > 0) {
-				const x = this.rng.float(MIN_DISTANCE_BETWEEN_PLANETS, this.width - MIN_DISTANCE_BETWEEN_PLANETS)
-				const y = this.rng.float(MIN_DISTANCE_BETWEEN_PLANETS, this.height - MIN_DISTANCE_BETWEEN_PLANETS)
 				const size = this.rng.float(MIN_PLANET_SIZE, MAX_PLANET_SIZE)
+				const x = this.rng.float(size, this.width-size)
+				const y = this.rng.float(size, this.height-size)
 				const color = this.rng.int(0, 360)
 				const name = generatePlanetName([
 					1-(size-MIN_PLANET_SIZE)/(MAX_PLANET_SIZE-MIN_PLANET_SIZE),
@@ -47,7 +143,7 @@ var GameEngine = (function() {
 				// Check if planet is not intersecting any other planet
 				let intersect = false
 				for(const planet of this.planets) {
-					if(newP.distanceTo(planet) < MIN_DISTANCE_BETWEEN_PLANETS) {
+					if(this.getSphericalDistance(newP, planet) < MIN_DISTANCE_BETWEEN_PLANETS) {
 						intersect = true
 						break
 					}
@@ -61,69 +157,11 @@ var GameEngine = (function() {
 		}
 
 		registerPlayer(player) {
-			this.players.push(player)
+			const connectr = new PlayerConnector(this, player)
+			this.players.push(connectr)
 			const playerId = this.players.length - 1
 
-			this.requestedAdvanceTurn[playerId] = -1
-
-			return {
-				width: this.width,
-				height: this.height,
-				getPlanetDistance: (originName, destinationName) => {
-					const origin = this.planets.find(p => p.name === originName)
-					const destination = this.planets.find(p => p.name === destinationName)
-					if(!origin) {
-						throw new Error("Invalid planet name: " + originName)
-					} else if(!destination) {
-						throw new Error("Invalid planet name: " + destinationName)
-					}
-					return origin.distanceTo(destination)
-				},
-				sendShip: (originName, destinationName, crewSize, turnOrigin=-1, turnDestination=-1) => {
-					if(originName === destinationName) {
-						throw new Error("Origin and destination are the same planet: " + originName)
-					} else if(turnOrigin >= 0 && turnOrigin < this.turn) {
-						throw new Error("Cannot send ship in the past: " + turnOrigin + " < " + this.turn + "(current turn)")
-					}
-
-					const origin = this.planets.find(p => p.name === originName)
-					const destination = this.planets.find(p => p.name === destinationName)
-
-					if(!origin) {
-						throw new Error("Invalid planet name: " + originName)
-					} else if(!destination) {
-						throw new Error("Invalid planet name: " + destinationName)
-					} else if(origin.owner !== player) {
-						console.error(origin, player)
-						throw new Error("Player " + player.name + " does not own origin planet: " + origin.name)
-					}
-
-					crewSize |= 0 // No floating value
-					if(crewSize < 1) {
-						throw new Error("Can't send an empty ship")
-					} else if(crewSize > origin.population) {
-						throw new Error("Not enough population in origin planet: " + origin.name + " (requested " + crewSize + "/" + (origin.population|0) + " inhabitants)")
-					}
-
-					const distance = origin.distanceTo(destination)
-					if(turnDestination >= 0 && turnOrigin + distance > turnDestination) {
-						throw new Error("Distance is too long, ship cannot arrive in requested time: " + turnOrigin + "(departure) + " + distance + "(fastest travel time) = " + (turnOrigin + distance) + " > " + turnDestination + "(arrival)")
-					} else if(turnDestination < this.turn + distance) {
-						turnDestination = this.turn + distance
-					}
-
-					origin.population -= crewSize
-					const ship = new SpaceShip(origin, destination, this.turn, turnDestination, crewSize)
-					this.ships.push(ship)
-					return this.updateSinglePlayer(player)
-				},
-				advanceToTurn: (turn) => {
-					this.requestedAdvanceTurn[playerId] = turn
-					if(turn > this.turn) {
-						this.advanceTurn()
-					}
-				},
-			}
+			return connectr
 		}
 
 		start() {
@@ -152,13 +190,14 @@ var GameEngine = (function() {
 			// Get turn to advance to
 			let newTurn = this.getNextEventTurn()
 
-			for(const requestedTurn of this.requestedAdvanceTurn) {
+			for(const p of this.players) {
+				const requestedTurn = p.requestedAdvanceTurn
 				if(requestedTurn < newTurn) {
 					newTurn = requestedTurn
 				}
 			}
 			if(newTurn > this.turn) {
-				this.update(newTurn, newTurn - this.turn)
+				this.update(newTurn)
 			}
 		}
 
@@ -228,7 +267,7 @@ var GameEngine = (function() {
 				// Ship Radar
 				if(!showFullData) {
 					for(const ship of myFlyingShips) {
-						if(planet.distanceTo(ship, true) <= SHIP_RADAR_RANGE) {
+						if(this.getSphericalDistance(planet, ship) <= SHIP_RADAR_RANGE) {
 							showFullData = true
 							shipRadars[ship.id].planets.push(planet.name)
 						}
@@ -251,7 +290,7 @@ var GameEngine = (function() {
 				if(!showFullShipData) {
 					// Planet Radar
 					for(const planet of myPlanets) {
-						const distance = planet.distanceTo(ship, true)
+						const distance = this.getSphericalDistance(planet, ship)
 						if(distance <= PLANET_PRECISE_RADAR_RANGE) {
 							showFullShipData = showShipData = true
 							if(!instantData.planets[planet.name].radar) instantData.planets[planet.name].radar = {ships: []}
@@ -265,7 +304,7 @@ var GameEngine = (function() {
 
 					// Ship Radar
 					for(const ship2 of myFlyingShips) {
-						const distance = ship.distanceTo(ship2, true)
+						const distance = this.getSphericalDistance(ship, ship2)
 						if(distance <= SHIP_PRECISE_RADAR_RANGE) {
 							showFullShipData = (showShipData = true)
 							shipRadars[ship2.id].ships.push(ship.name)
@@ -284,13 +323,39 @@ var GameEngine = (function() {
 					}
 				}
 			}
-			setTimeout(()=>player.update(instantData))
+			setTimeout(()=>player.sendUpdateToPlayer(instantData))
+		}
+
+
+		createSpaceShip(origin, destination, turnOrigin, turnDestination, crewSize) {
+			const ss = new SpaceShip(origin, destination, turnOrigin, turnDestination, crewSize, this)
+			this.ships.push(ss)
+			this.updateSinglePlayer(ss.owner)
+			return ss
+		}
+
+		getSphericalDistance(from, to) {
+			// Return the minimum distance between this and otherElement
+			// Logic of this equation: Shift full world such as from is at the center of the board. Then compute distance between from and to
+			const dx = this.width/2 - ((to.x - from.x + 2.5*this.width) % this.width)
+			const dy = this.height/2 - ((to.y - from.y + 2.5*this.height) % this.height)
+			const d = Math.hypot(dx, dy)
+			return d - (from.size ?? 0) - (to.size ?? 0)
+		}
+		getSphericalAngle(from, to) {
+			// Returns the angle to get from 'from' to 'to' using minimal distance, taking into account the fact that world is spherical
+			// Logic of this equation: Shift full world such as from is at the center of the board. Then compute angle between from and to
+			const dx = this.width/2 - ((to.x - from.x + 2.5*this.width) % this.width)
+			const dy = this.height/2 - ((to.y - from.y + 2.5*this.height) % this.height)
+			return Math.atan2(dy, dx)
 		}
 
 		/**
 		 * @param {number} added By how much turn has increased since last call (can be float)
 		 */
-		async update(newTurn, added) {
+		async update(newTurn) {
+			const added = newTurn - this.turn
+
 			// Update turn number
 			this.turn = newTurn
 
@@ -339,10 +404,6 @@ var GameEngine = (function() {
 			this.owner = null
 		}
 
-		distanceTo(otherPlanet, isNotAPlanet=false) {
-			return Math.hypot(this.x - otherPlanet.x, this.y - otherPlanet.y) - this.size - (isNotAPlanet ? 0 : otherPlanet.size)
-		}
-
 		getInstantData(isFull=false) {
 			const instantData = {
 				name: this.name,
@@ -354,7 +415,7 @@ var GameEngine = (function() {
 
 			if(isFull) {
 				instantData.population = this.population|0
-				instantData.owner = this.owner?this.owner.instantData:null
+				instantData.owner = this?.owner?.instantData
 				if(this.owner && !instantData.owner) console.error('planet.getInstantData:', this, instantData)
 			}
 
@@ -374,6 +435,7 @@ var GameEngine = (function() {
 	// // // SPACE SHIP // // //
 	let shipIds = 0
 	class SpaceShip extends Point {
+		#gameEngine
 
 		/**
 		 * @param {Planet} planetOrigin
@@ -382,7 +444,7 @@ var GameEngine = (function() {
 		 * @param {number} turnDestination
 		 * @param {number} crewSize
 		 */
-		constructor(planetOrigin, planetDestination, turnOrigin, turnDestination, crewSize) {
+		constructor(planetOrigin, planetDestination, turnOrigin, turnDestination, crewSize, gameEngine) {
 			super(planetOrigin.x, planetOrigin.y)
 
 			// Set ship id
@@ -395,20 +457,28 @@ var GameEngine = (function() {
 			this.crewSize = crewSize
 
 			this.owner = planetOrigin.owner
+			this.#gameEngine = gameEngine
+
+			const directTravelAngle = gameEngine.getSphericalAngle(planetOrigin, planetDestination)
 
 			// Precompute travel locations (from surface of origin to surface of destination)
-			const angle1 = Math.atan2(this.planetDestination.y - this.planetOrigin.y, this.planetDestination.x - this.planetOrigin.x)
-				+ (Math.random() > 0.5 ? 1 : -1) * (Math.random() * (Math.PI/4) + Math.PI/4)
+			const angle1 = directTravelAngle
+				+ (Math.random() > 0.5 ? 5 : 3) * Math.PI/4 // Origin from the left or right quarted side of origin planet, facing target
+				+ (Math.random()-0.5) * Math.PI/3 // A bit of variability from where it starts
 			this.pointOrigin = new Point(this.planetOrigin.x + Math.cos(angle1) * this.planetOrigin.size, this.planetOrigin.y + Math.sin(angle1) * this.planetOrigin.size)
 
-			const angle2 = Math.atan2(this.planetOrigin.y - this.planetDestination.y, this.planetOrigin.x - this.planetDestination.x)
-				+ (Math.random() > 0.5 ? 1 : -1) * (Math.random() * (Math.PI/4))
+			const angle2 = directTravelAngle
+				+ ((Math.random()-0.5) * Math.PI/2) // Destination is toward the front of target planet
 			this.pointDestination = new Point(this.planetDestination.x + Math.cos(angle2) * this.planetDestination.size, this.planetDestination.y + Math.sin(angle2) * this.planetDestination.size)
 
 			// Set to starting location
 			this.x = this.pointOrigin.x
 			this.y = this.pointOrigin.y
 			this.progress = 0
+
+			this.speed = this.location(this.turnOrigin + .1)
+			this.speed.x = (this.speed.x - this.pointOrigin.x)/.1
+			this.speed.y = (this.speed.y - this.pointOrigin.y)/.1
 		}
 
 		location(currentTurn) {
@@ -416,8 +486,11 @@ var GameEngine = (function() {
 			if(progress < 0) return this.pointOrigin
 			if(progress > 1) return this.pointDestination
 
-			const x = this.pointOrigin.x + (this.pointDestination.x - this.pointOrigin.x) * progress
-			const y = this.pointOrigin.y + (this.pointDestination.y - this.pointOrigin.y) * progress
+			const dx =  this.#gameEngine.width/2 - ((this.pointOrigin.x - this.pointDestination.x + 2.5*this.#gameEngine.width) % this.#gameEngine.width)
+			const dy =  this.#gameEngine.height/2 - ((this.pointOrigin.y - this.pointDestination.y + 2.5*this.#gameEngine.height) % this.#gameEngine.height)
+
+			const x = ((this.pointOrigin.x + dx * progress) + this.#gameEngine.width) % this.#gameEngine.width
+			const y = ((this.pointOrigin.y + dy * progress) + this.#gameEngine.height) % this.#gameEngine.height
 			return new Point(x, y)
 		}
 		update(currentTurn) {
@@ -450,6 +523,7 @@ var GameEngine = (function() {
 				id: this.id,
 				x: this.x,
 				y: this.y,
+				speed: new Point(this.speed.x, this.speed.y),
 			}
 
 			if(isFull) {

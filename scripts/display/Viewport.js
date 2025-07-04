@@ -18,16 +18,16 @@ function hsl2rgb(h, s, l) {
 }
 
 function formatTurnAsYear(turnNum) {
-	const rTurn = turnNum | 0
-	const curr = new Date(new Date().setFullYear(new Date().getFullYear()+33+rTurn) + (turnNum-rTurn)*365*24*60*60*1000)
+	// IRL current date + 33years 'Number of turns' months
+	const curr = new Date(+new Date() +(33 + turnNum/12)*365*24*60*60*1000)
 	return curr.toISOString().slice(0, 10)
 }
 
 
 var Viewport = (function() {
-	const ZOOM_SPEED = 16
+	const ZOOM_SPEED = 8
 	const MAP_MOVE_SENSITIVITY = 1
-	const TURNS_PER_SECOND = 0.5
+	const TURNS_PER_SECOND = 1
 	const BORDER_SIZE = 0.5 // Circle of selection around planets, in game units
 	const PLANET_RADAR_RADIUS = 2
 	const SHIP_RADAR_RADIUS = 1
@@ -231,11 +231,12 @@ var Viewport = (function() {
 		 * @param {*} shipData
 		 * @param {PlayerHuman} player
 		 */
-		constructor(shipData, player) {
+		constructor(shipData, player, displayCopy) {
 			super()
 
 			this.data = shipData
 			this.player = player
+			this.displayCopy = displayCopy
 
 			this.subGraphics = new PIXI.Graphics()
 			this.addChild(this.subGraphics)
@@ -261,61 +262,61 @@ var Viewport = (function() {
 			this.subGraphics.clear()
 
 			const crossSize = 6 * context.onePixel
+
 			this.subGraphics.lineStyle(context.onePixel, this.data.owner ? hsl2rgb(this.data.owner.color, 1, .7) : 0xFFFFFF, .5)
-			if(this.data.turnDestination) { // Destination & Speed are known
+			if(this.data.turnDestination && this.data.turnDestination > this.data.turn + 1) { // Destination & Speed are known
 				// Draw ship as a line between 'fromLoc' and 'toLoc'
-				const remainingFlighTime = this.data.turnDestination - this.data.turn
-				let shift = 2- (animationTime % (2*TURNS_PER_SECOND) / TURNS_PER_SECOND)
+				const currShift = 1- (animationTime % (2*TURNS_PER_SECOND) / TURNS_PER_SECOND) // between -1 & 1
 
-				if(remainingFlighTime < 1) {
-					this.subGraphics.moveTo(this.data.x, this.data.y)
-					this.subGraphics.lineTo(this.data.destination.x, this.data.destination.y)
-				} else {
-					// Last stroke
-					if(shift > 1) {
-						this.subGraphics.moveTo(this.data.destination.x, this.data.destination.y)
-						this.subGraphics.lineTo(this.data.destination.x - (shift-1)*this.data.speed.x, this.data.destination.y - (shift-1)*this.data.speed.y)
-					}
-
-					// Middle strokes
-					while(shift<remainingFlighTime-1) {
-						this.subGraphics.moveTo(this.data.destination.x - shift*this.data.speed.x, this.data.destination.y - shift*this.data.speed.y)
-						this.subGraphics.lineTo(this.data.destination.x - (shift+1)*this.data.speed.x, this.data.destination.y - (shift+1)*this.data.speed.y)
-
-						shift += 2
-					}
+				// First segment
+				if(currShift > 0) {
+					this.subGraphics.moveTo(this.data.destination.x, this.data.destination.y)
+					this.subGraphics.lineTo(this.data.destination.x - currShift*this.data.speed.x, this.data.destination.y - currShift*this.data.speed.y)
 				}
-			} else if(this.data.destination && !this.data.speed) { // Destination is known but not Speed
-				this.subGraphics.moveTo(this.data.x, this.data.y)
-				this.subGraphics.lineTo(this.data.destination.x, this.data.destination.y)
+				let lastTurnDrawn = this.data.turnDestination - currShift
+				let lastX = this.data.destination.x - currShift * this.data.speed.x
+				let lastY = this.data.destination.y - currShift * this.data.speed.y
+				while(lastTurnDrawn >= this.data.turn + 2) {
+					lastX -= this.data.speed.x
+					lastY -= this.data.speed.y
+					const nextX = lastX - this.data.speed.x
+					const nextY = lastY - this.data.speed.y
+
+					this.subGraphics.moveTo(lastX, lastY)
+					this.subGraphics.lineTo(nextX, nextY)
+
+					lastX = nextX
+					lastY = nextY
+					lastTurnDrawn -= 2
+				}
 			}
 
+			// Draw speed arrow from ship location to estimated nextTurn ship location
 			this.subGraphics.lineStyle(context.onePixel, this.data.owner ? hsl2rgb(this.data.owner.color, 1, .7) : 0xFFFFFF)
-			if(this.data.speed) { // Show Arrow if speed is known
-				const nextIsDestination = this.data.turnDestination && this.data.turnDestination - this.data.turn < 1
-				const nextX = nextIsDestination ? this.data.destination.x : this.data.x + this.data.speed.x
-				const nextY = nextIsDestination ? this.data.destination.y : this.data.y + this.data.speed.y
+			const nextIsDestination = this.data.turnDestination && this.data.turnDestination - this.data.turn < 1
+			const nextX = nextIsDestination ? this.data.destination.x : this.data.x + this.data.speed.x
+			const nextY = nextIsDestination ? this.data.destination.y : this.data.y + this.data.speed.y
 
-				this.subGraphics.moveTo(this.data.x, this.data.y)
-				this.subGraphics.lineTo(nextX, nextY)
+			this.subGraphics.moveTo(this.data.x, this.data.y)
+			this.subGraphics.lineTo(nextX, nextY)
 
-				// Draw arrow from ship location to estimated nextTurn ship location
-				const angleDirection = Math.atan2(this.data.speed.y, this.data.speed.x)
-				const angleFleche1 = angleDirection + 3*Math.PI/4
-				const angleFleche2 = angleDirection - 3*Math.PI/4
+			// Draw arrow shape for ship speed arrow
+			const angleDirection = Math.atan2(this.data.speed.y, this.data.speed.x)
+			const angleFleche1 = angleDirection + 3*Math.PI/4
+			const angleFleche2 = angleDirection - 3*Math.PI/4
 
-				this.subGraphics.lineTo(
-					nextX + Math.cos(angleFleche1) * crossSize,
-					nextY + Math.sin(angleFleche1) * crossSize
-				)
-				this.subGraphics.moveTo(nextX, nextY)
-				this.subGraphics.lineTo(
-					nextX + Math.cos(angleFleche2) * crossSize,
-					nextY + Math.sin(angleFleche2) * crossSize
-				)
-			}
+			this.subGraphics.lineTo(
+				nextX + Math.cos(angleFleche1) * crossSize,
+				nextY + Math.sin(angleFleche1) * crossSize
+			)
+			this.subGraphics.moveTo(nextX, nextY)
+			this.subGraphics.lineTo(
+				nextX + Math.cos(angleFleche2) * crossSize,
+				nextY + Math.sin(angleFleche2) * crossSize
+			)
 
 			// Draw a cross to mark the ship
+			this.subGraphics.lineStyle(context.onePixel, this.data.owner ? hsl2rgb(this.data.owner.color, 1, .7) : 0xFFFFFF)
 			this.subGraphics.moveTo(this.data.x -crossSize, this.data.y)
 			this.subGraphics.lineTo(this.data.x +crossSize, this.data.y)
 			this.subGraphics.moveTo(this.data.x, this.data.y -crossSize)
@@ -393,9 +394,12 @@ var Viewport = (function() {
 			// Add missing ships
 			for (const shipId in this.player.ships) {
 				if(!this.shipRenderers[shipId]) {
-					const shipRenderer = new ShipRenderer(this.player.ships[shipId], this.player)
-					this.shipRenderers[shipId] = shipRenderer
-					this.addChild(shipRenderer)
+					this.shipRenderers[shipId] = []
+					for(let x=-1; x<=1; x++) for(let y=-1; y<=1; y++) {
+						const shipRenderer = new ShipRenderer(this.player.ships[shipId], this.player, {x:x, y:y})
+						this.shipRenderers[shipId].push(shipRenderer)
+						this.addChild(shipRenderer)
+					}
 				}
 			}
 
@@ -403,9 +407,9 @@ var Viewport = (function() {
 			for(const shipId in this.shipRenderers) {
 				const shipData = this.player.ships[shipId]
 				if(shipData && !shipData.isArrived) {
-					this.shipRenderers[shipId].update(context, animationTime)
+					this.shipRenderers[shipId].forEach(r => r.update(context, animationTime))
 				} else {
-					this.shipRenderers[shipId].destroy()
+					this.shipRenderers[shipId].forEach(r => r.destroy())
 					delete this.shipRenderers[shipId]
 				}
 			}
@@ -424,9 +428,25 @@ var Viewport = (function() {
 
 			this.player.onClick(event)
 		}
+
+		shiftViewport(shiftX, shiftY) {
+			// Move all planets and ship coordinates relative to viewport center (add game.width/height then modulo game.width/height)
+			for(const planetRenderer of Object.values(this.planetRenderers)) {
+				planetRenderer.x = (shiftX + planetRenderer.data.x + this.player.game.width) % this.player.game.width
+				planetRenderer.y = (shiftY + planetRenderer.data.y + this.player.game.height) % this.player.game.height
+			}
+			for(const multipleShipRenderers of Object.values(this.shipRenderers)) {
+				for(const shipRenderer of multipleShipRenderers) {
+					shipRenderer.transform.position.x = (shiftX + this.player.game.width) % this.player.game.width + (shipRenderer.displayCopy.x * this.player.game.width)
+					shipRenderer.transform.position.y = (shiftY + this.player.game.height) % this.player.game.height + (shipRenderer.displayCopy.y * this.player.game.height)
+				}
+			}
+		}
 	}
 
 	class Viewport {
+		#renderer
+
 		/**
 		 * @param {*} divs
 		 * @param {PlayerHuman} player
@@ -434,7 +454,7 @@ var Viewport = (function() {
 		constructor(divs, player) {
 			const THIS_VIEWPORT = this
 			const PLAYER = player
-			const RENDERER = new Renderer(player)
+			this.#renderer = new Renderer(player)
 
 			this.viewLocation = { x: 0, y: 0, zoom: 0 }
 
@@ -451,14 +471,15 @@ var Viewport = (function() {
 			this.graphics = graphics
 			pixi.stage.addChild(graphics)
 			this.gameToViewportMatrix = new PIXI.Matrix()
-			graphics.addChild(RENDERER)
+			graphics.addChild(this.#renderer)
 
 			let mouseLocationGame = new Point(0, 0)
 			let dragnDrop = false
 
 			// Zoom on mouse wheel scroll
 			HTML.bind('mousewheel DOMMouseScroll', (e) => {
-				this.updateZoom(this.viewLocation.zoom + (e.originalEvent.wheelDelta || -e.originalEvent.detail) / ZOOM_SPEED)
+				const inOrOut = Math.sign(e.originalEvent.wheelDelta || -e.originalEvent.detail)
+				this.updateZoom(this.viewLocation.zoom + inOrOut / ZOOM_SPEED)
 			}).bind('mousedown', (e) => {
 				if(e.button === 2 && !dragnDrop) {
 					// Right click
@@ -482,9 +503,14 @@ var Viewport = (function() {
 					} else {
 						const dx = (mouseLocationGame.x - dragnDrop.x) * MAP_MOVE_SENSITIVITY
 						const dy = (mouseLocationGame.y - dragnDrop.y) * MAP_MOVE_SENSITIVITY
-						THIS_VIEWPORT.viewLocation.x -= dx
-						THIS_VIEWPORT.viewLocation.y -= dy
-						dragnDrop = { x: mouseLocationGame.x + dx, y: mouseLocationGame.y + dy }
+						THIS_VIEWPORT.viewLocation.x += dx
+						THIS_VIEWPORT.viewLocation.y += dy
+
+						// Modulo viewLocation on game board size
+						THIS_VIEWPORT.viewLocation.x = (THIS_VIEWPORT.viewLocation.x + PLAYER.game.width) % PLAYER.game.width
+						THIS_VIEWPORT.viewLocation.y = (THIS_VIEWPORT.viewLocation.y + PLAYER.game.height) % PLAYER.game.height
+
+						dragnDrop = mouseLocationGame
 						THIS_VIEWPORT.updateView()
 					}
 				}
@@ -492,6 +518,7 @@ var Viewport = (function() {
 				e.preventDefault()
 			})
 
+			const renderer = this.#renderer
 			const onTick = async function() {
 				const deltaS = pixi.ticker.deltaMS / 1000
 				animationTime += deltaS
@@ -510,13 +537,14 @@ var Viewport = (function() {
 				graphics.clear()
 				graphics.onePixel = 1 / graphics.scale.x
 				graphics.mouseLocation = mouseLocationGame
-				RENDERER.update(graphics, animationTime)
+				renderer.update(graphics, animationTime)
+				THIS_VIEWPORT.updateView()
 			}
 
 			pixi.ticker.add(onTick)
 
-			divs['btn-nextMonth'].click(() =>turn += 1/12)
-			divs['btn-nextYear'].click(() =>turn += 1)
+			divs['btn-nextWeek'].click(() => turn += 1/4)
+			divs['btn-nextMonth'].click(() => turn += 1)
 
 			this.updateZoom = async function(newZoom) {
 				// Where is the mouse in the game before zoom
@@ -527,7 +555,7 @@ var Viewport = (function() {
 				THIS_VIEWPORT.viewLocation.zoom = newZoom
 
 				// Fix limits depending on engine bounds
-				const gameBounds = RENDERER.bounds // [{x,y}, {x,y}]
+				const gameBounds = this.#renderer.bounds // [{x,y}, {x,y}]
 				const viewportBounds = this.getViewportBoundsOnScreen() // [{x,y}, {x,y}]
 				const ratioX = (viewportBounds[1].x - viewportBounds[0].x) / (gameBounds[1].x - gameBounds[0].x)
 				const ratioY = (viewportBounds[1].y - viewportBounds[0].y) / (gameBounds[1].y - gameBounds[0].y)
@@ -554,16 +582,19 @@ var Viewport = (function() {
 				THIS_VIEWPORT.updateView(true)
 			}
 
+			// Default zoom out maximum
 			this.updateZoom(-99)
 		}
 		async updateView(applyUpdate = true) {
+
 			// Initiate the matrix
 			this.gameToViewportMatrix.identity()
 
 			// Apply zoom
 			const zoomFactor = 2 ** this.viewLocation.zoom
 			this.gameToViewportMatrix.scale(zoomFactor, zoomFactor)
-			this.gameToViewportMatrix.translate(this.viewLocation.x * zoomFactor, this.viewLocation.y * zoomFactor)
+
+			this.#renderer.shiftViewport(this.viewLocation.x, this.viewLocation.y)
 
 			if(applyUpdate) {
 				this.graphics.transform.setFromMatrix(this.gameToViewportMatrix)

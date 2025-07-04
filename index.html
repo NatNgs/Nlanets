@@ -56,7 +56,7 @@
 
 
 			// Prepare Player Viewport
-			const elementsList = ['viewport', 'btn-nextMonth', 'btn-nextYear', 'label-turn', 'chk-autorun']
+			const elementsList = ['viewport', 'btn-nextMonth', 'btn-nextWeek', 'label-turn', 'chk-autorun']
 			const htmlViewportElements = {}
 			for(const id of elementsList) {
 				htmlViewportElements[id] = $('[id="' + id  +'"]')
@@ -89,9 +89,11 @@
 
 	<div id="toolbar" hidden>
 		<span>Date: <span id="label-turn"></span></span>
+		<button id="btn-nextWeek">Next Week</button>
 		<button id="btn-nextMonth">Next Month</button>
-		<button id="btn-nextYear">Next Year</button>
 		<input type="checkbox" id="chk-autorun"/><label for="chk-autorun">Autorun</label>
+		<br/>
+		<div>Quantity to send: <input type="number" min="0" max="100" id="inpt-quantity" value="50"/>%</div>
 
 	</div>
 	<div id="viewport" hidden></div>

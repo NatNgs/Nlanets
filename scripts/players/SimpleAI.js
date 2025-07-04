@@ -57,7 +57,7 @@ var SimpleAI = (function () {
 
 
 
-		async update(data) {
+		async onReceiveGameUpdate(data) {
 			// Update current turn number
 			this.turn = data.turn
 

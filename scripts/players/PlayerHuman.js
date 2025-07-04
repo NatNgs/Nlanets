@@ -32,6 +32,10 @@ var PlayerHuman = (function () {
 			if(updatedData.population) {
 				planetData.updated = turn
 			}
+			if(planetData.owner === this.name && !updatedData.owner) {
+				// We lost the planet
+				planetData.owner = null
+			}
 		}
 
 		updateShipData(updatedData, turn) {
@@ -48,19 +52,6 @@ var PlayerHuman = (function () {
 				shipData[property] = updatedData[property]
 			}
 			shipData.updated = turn
-
-			// Compute speed
-			if(shipData.turnDestination && shipData.destination) {
-				shipData.speed = new Point(
-					(shipData.destination.x - shipData.firstKnownLocation.x) / (shipData.turnDestination - shipData.firstKnownLocation.turn),
-					(shipData.destination.y - shipData.firstKnownLocation.y) / (shipData.turnDestination - shipData.firstKnownLocation.turn)
-				)
-			} else if(shipData.firstKnownLocation.turn < turn) {
-				shipData.speed = new Point(
-					(shipData.x - shipData.firstKnownLocation.x) / (turn - shipData.firstKnownLocation.turn),
-					(shipData.y - shipData.firstKnownLocation.y) / (turn - shipData.firstKnownLocation.turn)
-				)
-			}
 		}
 
 		updateUnseenShip(shipId) {
@@ -81,7 +72,7 @@ var PlayerHuman = (function () {
 			}
 		}
 
-		async update(data) {
+		async onReceiveGameUpdate(data) {
 			this.turn = data.turn
 
 			// Player update
@@ -141,7 +132,6 @@ var PlayerHuman = (function () {
 			if(!newSelectedPlanet) {
 				throw new Error(`Planet ${planetName} not found`)
 			}
-			console.debug('PlayerHuman onClick on', planetName)
 
 			const previouslySelectedPlanet = this.selectedPlanet
 			if(previouslySelectedPlanet) {
@@ -155,9 +145,13 @@ var PlayerHuman = (function () {
 			if(previouslySelectedPlanet === newSelectedPlanet) {
 				newSelectedPlanet.selected = false
 				this.selectedPlanet = null
-			} else if(previouslySelectedPlanet && previouslySelectedPlanet.population > 1 && previouslySelectedPlanet.owner.name === this.name) {
+			} else if(previouslySelectedPlanet && previouslySelectedPlanet.population > 1 && previouslySelectedPlanet?.owner?.name === this.name) {
 				// Send a ship from previously selected planet to this planet
-				const shipSize = (previouslySelectedPlanet.population/2)|0
+				const ratio = (document.getElementById('inpt-quantity').value)/100
+				let shipSize = (previouslySelectedPlanet.population*ratio)|0
+				if(shipSize < 1) shipSize = 1
+				if(shipSize >= previouslySelectedPlanet.population) shipSize = previouslySelectedPlanet.population - 1
+
 				setTimeout(()=>this.game.sendShip(previouslySelectedPlanet.name, newSelectedPlanet.name, shipSize))
 
 				newSelectedPlanet.selected = false
@@ -169,7 +163,6 @@ var PlayerHuman = (function () {
 		 * @param {Point} clickLocation
 		 */
 		async onClick(clickLocation) {
-			console.debug('PlayerHuman onClick on empty space')
 			const previouslySelectedPlanet = this.selectedPlanet
 			if (previouslySelectedPlanet) {
 				previouslySelectedPlanet.selected = false

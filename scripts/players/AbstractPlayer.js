@@ -40,14 +40,7 @@ class AbstractPlayer {
 	 * 		}
 	 * 	}```
 	 */
-	update(data) {
+	async onReceiveGameUpdate(data) {
 		throw new Error("Non Implemented Abstract method")
-	}
-
-	get instantData() {
-		return {
-			name: this.name,
-			color: this.color,
-		}
 	}
 }

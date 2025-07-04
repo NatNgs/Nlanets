@@ -26,7 +26,7 @@ var RandomAI = (function () {
 			console.log(this.name, this.color)
 		}
 
-		update(data) {
+		onReceiveGameUpdate(data) {
 			this.turn = data.turn
 			for(const planetName in data.planets) {
 				const dta = data.planets[planetName]
